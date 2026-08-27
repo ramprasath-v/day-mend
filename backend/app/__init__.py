@@ -1,0 +1,1 @@
+"""DayMend backend application package."""
