@@ -26,3 +26,24 @@ should check for this named scenario and select a predetermined backup. The norm
 gap calculation, reasoning, validation, approval, execution, and verification path must drive
 the result.
 
+## Milestone 1 boundary
+
+The current implementation covers steps 1–5 only: the nanny-cancellation fixture, agent-directed
+context gathering, bounded initial-plan repair, and deterministic acceptance of Plan A. Fixture
+facts are synthetic, while Strands tool selection and plan generation are real when Bedrock
+credentials are available. Context is gathered once. An invalid draft receives structured
+validator findings in the same agent conversation and may be repaired, with a hard cap of three
+planning attempts.
+
+A real Nova Pro smoke invoked all five tools and reached a valid plan on attempt 3. Attempts 1
+and 2 were rejected for separate missing movable-calendar changes. The final plan covered
+08:00–16:00, respected caregiver availability and critical commitments, included both required
+calendar changes, cost `$92.00` deterministically, and reported `requires_approval=true` against
+the `$30` automatic-spend threshold.
+
+This correction loop does not process external responses: it repairs an initial proposal that
+was never valid while world state is unchanged. It is not the caregiver-decline replanning shown
+in steps 6–9.
+
+Steps 6–16 remain future milestones. No caregiver decline, invalidation, replanning, approval,
+execution, or completion branch has been scripted or implemented.

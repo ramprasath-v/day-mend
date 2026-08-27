@@ -85,8 +85,69 @@ Tools are not separate agents by default. They expose data or deterministic acti
 core Recovery Agent. Multi-agent specialization is justified only if future implementation
 reveals genuinely separate, durable reasoning responsibilities.
 
-## Phase 0 shape
+## Milestone 1 implementation
 
-Phase 0 contains domain contracts only. It does not contain the Strands agent, Bedrock access,
-workflow services, deterministic business validation, persistence, APIs, integrations, or UI.
+Milestone 1 uses exactly one Strands `Agent`, backed by `BedrockModel`. The agent receives the
+disruption rather than a preassembled context bundle and chooses among five read-only `@tool`
+capabilities:
 
+- `get_childcare_schedule`
+- `get_parent_calendars`
+- `get_caregivers`
+- `get_family_preferences`
+- `get_family_policy`
+
+The agent returns a typed `RecoveryPlan` through Strands structured output. Application code
+forcibly resets its state to `NOT_VALIDATED`; the model cannot certify its own proposal.
+
+`PlanValidator` then independently reads the authoritative synthetic scenario and checks full
+coverage, gaps, supported identities, caregiver trust and availability, parent calendar
+conflicts, handoff feasibility, costs, and hard policy. It returns a validated plan copy with
+deterministically recomputed segment and total costs.
+
+Initial planning uses a bounded proposal/validation/repair loop. The five tools gather context
+once in a single Strands agent conversation. If validation fails, the validator's structured
+issues—stable code, message, and relevant subject/segment/event identifiers—are sent back to the
+same agent. The unchanged context is reused and the agent returns a complete repaired proposal.
+The loop stops immediately on success or after `MAX_PLAN_ATTEMPTS = 3`; after three invalid
+proposals it returns a structured failure with no accepted plan. Application code never inserts
+a fallback plan, and the agent cannot waive an issue.
+
+This is initial-plan repair: Plan A has never been valid and the authoritative world state has
+not changed. It is distinct from Milestone 2 replanning, where an external event invalidates a
+previously valid or executing plan. No external-event invalidation behavior is implemented here.
+
+`FamilyPreferences` are soft. The validator may warn that a proposal did not follow them but
+does not reject an otherwise allowed plan. `FamilyPolicy` is hard. `Caregiver.is_trusted` is the
+authoritative per-caregiver trust fact; policy states whether that fact is required.
+
+Validation separates three decisions:
+
+1. **Feasibility:** full coverage, supported people, trust, availability, calendars, and
+   handoffs determine whether the recovery strategy works safely.
+2. **Cost:** authoritative caregiver pricing deterministically replaces all model-proposed
+   segment and total amounts.
+3. **Autonomy:** cost above `automatic_spend_limit` sets `requires_approval=true`. The threshold
+   is not a budget, does not invalidate the plan, and must never cause the planner to leave a
+   coverage gap. Approval interaction remains a future milestone.
+
+### Handoff abstraction
+
+Maps and routing are intentionally out of scope. Each caregiver may declare a required handoff
+buffer, and policy may declare a family-wide minimum. Adjacent assignments to different people
+must overlap by exactly the larger required buffer. Less overlap leaves the handoff infeasible;
+more overlap is treated as an inconsistent schedule. The primary fixture uses zero-minute
+buffers because its handoffs are explicitly assumed feasible.
+
+### Verified live boundary
+
+The Bedrock smoke command executed successfully with `amazon.nova-pro-v1:0`. It invoked all five
+context tools once. Attempt 1 was rejected for omitting the `parent_a_standup` calendar change;
+attempt 2 repaired that issue but was rejected for omitting the `parent_a_internal_sync` change;
+attempt 3 included both changes and passed deterministic validation. Its five coverage segments
+spanned 08:00–16:00, all caregivers were inside authoritative availability, deterministic cost
+was `$92.00`, and the `$30` threshold produced `requires_approval=true` without a feasibility
+error. Model choice remains environment-configurable.
+
+No execution, replanning, approval/resume, persistence, API, external calendar, or UI behavior
+is implemented in Milestone 1.

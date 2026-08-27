@@ -1,0 +1,482 @@
+"""Deterministic validation for agent-proposed recovery plans."""
+
+from datetime import timedelta
+from decimal import ROUND_HALF_UP, Decimal
+from enum import StrEnum
+
+from pydantic import Field
+
+from app.fixtures import DemoScenario
+from app.models import (
+    CalendarEvent,
+    Caregiver,
+    ContractModel,
+    CoverageSource,
+    CoverageWindow,
+    FamilyPreferences,
+    PlanValidationState,
+    RecoveryPlan,
+    RecoveryPlanSegment,
+)
+
+MONEY_QUANTUM = Decimal("0.01")
+
+
+class ValidationErrorCode(StrEnum):
+    """Stable error taxonomy exposed to the Recovery Agent's repair loop."""
+
+    DUPLICATE_SEGMENT_ID = "duplicate_segment_id"
+    COVERAGE_GAP = "coverage_gap"
+    COVERAGE_OVERLAP = "coverage_overlap"
+    HANDOFF_INFEASIBLE = "handoff_infeasible"
+    CAREGIVER_UNAVAILABLE = "caregiver_unavailable"
+    CAREGIVER_UNTRUSTED = "caregiver_untrusted"
+    PARENT_CRITICAL_CONFLICT = "parent_critical_conflict"
+    MOVABLE_EVENT_CHANGE_REQUIRED = "movable_event_change_required"
+    UNSUPPORTED_PERSON = "unsupported_person"
+    UNSUPPORTED_CALENDAR_EVENT = "unsupported_calendar_event"
+    HARD_POLICY_VIOLATION = "hard_policy_violation"
+
+
+class PlanValidationIssue(ContractModel):
+    """One actionable deterministic finding suitable for structured model feedback."""
+
+    code: ValidationErrorCode
+    message: str
+    subject_id: str | None = None
+    segment_id: str | None = None
+    event_id: str | None = None
+
+
+class PlanValidationResult(ContractModel):
+    """Auditable result of deterministic validation."""
+
+    valid: bool
+    issues: list[PlanValidationIssue] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    deterministic_total_cost: Decimal = Field(ge=0)
+    requires_approval: bool = False
+    validated_plan: RecoveryPlan
+
+
+class PlanValidator:
+    """Validate a proposed plan against authoritative scenario facts without an LLM."""
+
+    def validate(self, plan: RecoveryPlan, scenario: DemoScenario) -> PlanValidationResult:
+        """Return a validated copy of the plan and all deterministic findings."""
+
+        issues: list[PlanValidationIssue] = []
+        warnings: list[str] = []
+        segments = sorted(
+            plan.coverage_segments,
+            key=lambda segment: (segment.window.start, segment.window.end),
+        )
+        caregivers = {caregiver.caregiver_id: caregiver for caregiver in scenario.caregivers}
+        parent_ids = set(scenario.parent_ids)
+
+        # Feasibility: can this plan safely cover the entire disruption window?
+        self._validate_unique_segment_ids(segments, issues)
+        self._validate_coverage_and_handoffs(segments, scenario, caregivers, issues)
+        self._validate_assignments(segments, scenario, caregivers, parent_ids, issues)
+        self._validate_parent_calendars(segments, plan.calendar_changes, scenario, issues)
+
+        # Cost: authoritative prices replace every model-proposed amount.
+        deterministic_segments, total_cost = self._recompute_costs(segments, caregivers)
+        self._warn_on_cost_mismatches(plan, deterministic_segments, total_cost, warnings)
+        self._add_preference_warnings(
+            deterministic_segments,
+            caregivers,
+            scenario.preferences,
+            warnings,
+        )
+
+        # Autonomy: spending affects future execution authority, never feasibility.
+        requires_approval = total_cost > scenario.policy.automatic_spend_limit
+        if requires_approval:
+            warnings.append(
+                "Plan cost exceeds the automatic-spend limit and would require approval "
+                "before execution."
+            )
+
+        errors = [issue.message for issue in issues]
+        validation_state = PlanValidationState.INVALID if issues else PlanValidationState.VALID
+        validated_plan = plan.model_copy(
+            update={
+                "coverage_segments": deterministic_segments,
+                "estimated_cost": total_cost,
+                "validation_state": validation_state,
+                "validation_errors": errors.copy(),
+            }
+        )
+        return PlanValidationResult(
+            valid=not issues,
+            issues=issues,
+            errors=errors,
+            warnings=warnings,
+            deterministic_total_cost=total_cost,
+            requires_approval=requires_approval,
+            validated_plan=validated_plan,
+        )
+
+    @staticmethod
+    def _validate_unique_segment_ids(
+        segments: list[RecoveryPlanSegment], issues: list[PlanValidationIssue]
+    ) -> None:
+        segment_ids = [segment.segment_id for segment in segments]
+        if len(segment_ids) != len(set(segment_ids)):
+            issues.append(
+                PlanValidationIssue(
+                    code=ValidationErrorCode.DUPLICATE_SEGMENT_ID,
+                    message="Coverage segment IDs must be unique.",
+                )
+            )
+
+    @staticmethod
+    def _validate_coverage_and_handoffs(
+        segments: list[RecoveryPlanSegment],
+        scenario: DemoScenario,
+        caregivers: dict[str, Caregiver],
+        issues: list[PlanValidationIssue],
+    ) -> None:
+        required = scenario.required_coverage
+        if not segments:
+            issues.append(
+                PlanValidationIssue(
+                    code=ValidationErrorCode.COVERAGE_GAP,
+                    message="Required childcare window has no coverage segments.",
+                )
+            )
+            return
+
+        if segments[0].window.start != required.start:
+            issues.append(
+                PlanValidationIssue(
+                    code=ValidationErrorCode.COVERAGE_GAP,
+                    message="Coverage does not start at the beginning of the required window.",
+                    segment_id=segments[0].segment_id,
+                )
+            )
+        if segments[-1].window.end != required.end:
+            issues.append(
+                PlanValidationIssue(
+                    code=ValidationErrorCode.COVERAGE_GAP,
+                    message="Coverage does not end at the end of the required window.",
+                    segment_id=segments[-1].segment_id,
+                )
+            )
+
+        for segment in segments:
+            if segment.window.start < required.start or segment.window.end > required.end:
+                issues.append(
+                    PlanValidationIssue(
+                        code=ValidationErrorCode.HARD_POLICY_VIOLATION,
+                        message=(
+                            f"Segment {segment.segment_id} extends outside the required window."
+                        ),
+                        segment_id=segment.segment_id,
+                    )
+                )
+
+        for previous, current in zip(segments, segments[1:], strict=False):
+            boundary_delta = current.window.start - previous.window.end
+            different_people = previous.assigned_person_id != current.assigned_person_id
+            if not different_people:
+                if boundary_delta > timedelta(0):
+                    issues.append(
+                        PlanValidationIssue(
+                            code=ValidationErrorCode.COVERAGE_GAP,
+                            message=f"Uncovered gap before segment {current.segment_id}: "
+                            f"{int(boundary_delta.total_seconds() // 60)} minutes.",
+                            segment_id=current.segment_id,
+                        )
+                    )
+                elif boundary_delta < timedelta(0):
+                    issues.append(
+                        PlanValidationIssue(
+                            code=ValidationErrorCode.COVERAGE_OVERLAP,
+                            message=f"Inconsistent overlap before segment {current.segment_id} "
+                            "for the same assigned person.",
+                            segment_id=current.segment_id,
+                        )
+                    )
+                continue
+
+            required_buffer = scenario.policy.minimum_handoff_minutes
+            if current.source is CoverageSource.CAREGIVER:
+                caregiver = caregivers.get(current.assigned_person_id)
+                if caregiver is not None:
+                    required_buffer = max(required_buffer, caregiver.handoff_buffer_minutes)
+
+            actual_overlap = max(
+                0,
+                int((-boundary_delta).total_seconds() // 60),
+            )
+            if boundary_delta > timedelta(0):
+                issues.append(
+                    PlanValidationIssue(
+                        code=ValidationErrorCode.COVERAGE_GAP,
+                        message=f"Uncovered gap before segment {current.segment_id}: "
+                        f"{int(boundary_delta.total_seconds() // 60)} minutes.",
+                        segment_id=current.segment_id,
+                    )
+                )
+            if actual_overlap < required_buffer:
+                issues.append(
+                    PlanValidationIssue(
+                        code=ValidationErrorCode.HANDOFF_INFEASIBLE,
+                        message=f"Handoff before segment {current.segment_id} provides "
+                        f"{actual_overlap} of {required_buffer} required buffer minutes.",
+                        segment_id=current.segment_id,
+                    )
+                )
+            elif actual_overlap > required_buffer:
+                issues.append(
+                    PlanValidationIssue(
+                        code=ValidationErrorCode.COVERAGE_OVERLAP,
+                        message=f"Unexpected overlap before segment {current.segment_id}: "
+                        f"{actual_overlap} minutes with only {required_buffer} required.",
+                        segment_id=current.segment_id,
+                    )
+                )
+
+    @staticmethod
+    def _validate_assignments(
+        segments: list[RecoveryPlanSegment],
+        scenario: DemoScenario,
+        caregivers: dict[str, Caregiver],
+        parent_ids: set[str],
+        issues: list[PlanValidationIssue],
+    ) -> None:
+        for segment in segments:
+            person_id = segment.assigned_person_id
+            if segment.source is CoverageSource.PARENT:
+                if person_id not in parent_ids:
+                    issues.append(
+                        PlanValidationIssue(
+                            code=ValidationErrorCode.UNSUPPORTED_PERSON,
+                            message=(
+                                f"Segment {segment.segment_id} invents unsupported parent "
+                                f"{person_id}."
+                            ),
+                            subject_id=person_id,
+                            segment_id=segment.segment_id,
+                        )
+                    )
+                continue
+
+            caregiver = caregivers.get(person_id)
+            if caregiver is None:
+                issues.append(
+                    PlanValidationIssue(
+                        code=ValidationErrorCode.UNSUPPORTED_PERSON,
+                        message=(
+                            f"Segment {segment.segment_id} invents unsupported caregiver "
+                            f"{person_id}."
+                        ),
+                        subject_id=person_id,
+                        segment_id=segment.segment_id,
+                    )
+                )
+                continue
+            if person_id in scenario.unavailable_caregiver_ids:
+                issues.append(
+                    PlanValidationIssue(
+                        code=ValidationErrorCode.CAREGIVER_UNAVAILABLE,
+                        message=f"Caregiver {person_id} is unavailable due to the disruption.",
+                        subject_id=person_id,
+                        segment_id=segment.segment_id,
+                    )
+                )
+            if (
+                scenario.policy.require_trusted_caregiver
+                or not scenario.policy.unapproved_caregiver_allowed
+            ) and not caregiver.is_trusted:
+                issues.append(
+                    PlanValidationIssue(
+                        code=ValidationErrorCode.CAREGIVER_UNTRUSTED,
+                        message=f"Caregiver {person_id} is not trusted/approved by family policy.",
+                        subject_id=person_id,
+                        segment_id=segment.segment_id,
+                    )
+                )
+            if not any(
+                window.start <= segment.window.start and window.end >= segment.window.end
+                for window in caregiver.availability
+            ):
+                issues.append(
+                    PlanValidationIssue(
+                        code=ValidationErrorCode.CAREGIVER_UNAVAILABLE,
+                        message=(
+                            f"Caregiver {person_id} is unavailable for segment "
+                            f"{segment.segment_id}."
+                        ),
+                        subject_id=person_id,
+                        segment_id=segment.segment_id,
+                    )
+                )
+
+    @staticmethod
+    def _validate_parent_calendars(
+        segments: list[RecoveryPlanSegment],
+        calendar_changes: list[CalendarEvent],
+        scenario: DemoScenario,
+        issues: list[PlanValidationIssue],
+    ) -> None:
+        original_events = {event.event_id: event for event in scenario.parent_events}
+        changes = {event.event_id: event for event in calendar_changes}
+
+        for change in calendar_changes:
+            original = original_events.get(change.event_id)
+            if original is None:
+                issues.append(
+                    PlanValidationIssue(
+                        code=ValidationErrorCode.UNSUPPORTED_CALENDAR_EVENT,
+                        message=f"Calendar change invents unsupported event {change.event_id}.",
+                        subject_id=change.owner_id,
+                        event_id=change.event_id,
+                    )
+                )
+            elif original.critical or not original.movable:
+                issues.append(
+                    PlanValidationIssue(
+                        code=ValidationErrorCode.PARENT_CRITICAL_CONFLICT,
+                        message=f"Calendar event {change.event_id} cannot be moved.",
+                        subject_id=change.owner_id,
+                        event_id=change.event_id,
+                    )
+                )
+            elif change.owner_id != original.owner_id:
+                issues.append(
+                    PlanValidationIssue(
+                        code=ValidationErrorCode.UNSUPPORTED_CALENDAR_EVENT,
+                        message=f"Calendar change {change.event_id} changes the event owner.",
+                        subject_id=change.owner_id,
+                        event_id=change.event_id,
+                    )
+                )
+
+        for segment in segments:
+            if segment.source is not CoverageSource.PARENT:
+                continue
+            for event in scenario.parent_events:
+                if event.owner_id != segment.assigned_person_id:
+                    continue
+                if not _windows_overlap(segment.window, event.window):
+                    continue
+                if event.critical or not event.movable:
+                    issues.append(
+                        PlanValidationIssue(
+                            code=ValidationErrorCode.PARENT_CRITICAL_CONFLICT,
+                            message=f"Parent {segment.assigned_person_id} is assigned during "
+                            f"critical or non-movable event {event.event_id}.",
+                            subject_id=segment.assigned_person_id,
+                            segment_id=segment.segment_id,
+                            event_id=event.event_id,
+                        )
+                    )
+                    continue
+                changed_event = changes.get(event.event_id)
+                if changed_event is None:
+                    issues.append(
+                        PlanValidationIssue(
+                            code=ValidationErrorCode.MOVABLE_EVENT_CHANGE_REQUIRED,
+                            message=f"Parent coverage overlaps movable event {event.event_id} "
+                            "without a proposed calendar change.",
+                            subject_id=segment.assigned_person_id,
+                            segment_id=segment.segment_id,
+                            event_id=event.event_id,
+                        )
+                    )
+                elif _windows_overlap(segment.window, changed_event.window):
+                    issues.append(
+                        PlanValidationIssue(
+                            code=ValidationErrorCode.MOVABLE_EVENT_CHANGE_REQUIRED,
+                            message=(
+                                f"Moved calendar event {event.event_id} still overlaps parent "
+                                "coverage."
+                            ),
+                            subject_id=segment.assigned_person_id,
+                            segment_id=segment.segment_id,
+                            event_id=event.event_id,
+                        )
+                    )
+
+    @staticmethod
+    def _recompute_costs(
+        segments: list[RecoveryPlanSegment],
+        caregivers: dict[str, Caregiver],
+    ) -> tuple[list[RecoveryPlanSegment], Decimal]:
+        total = Decimal("0")
+        charged_flat_rates: set[str] = set()
+        deterministic_segments: list[RecoveryPlanSegment] = []
+
+        for segment in segments:
+            cost = Decimal("0")
+            caregiver = caregivers.get(segment.assigned_person_id)
+            if segment.source is CoverageSource.CAREGIVER and caregiver is not None:
+                if caregiver.flat_rate is not None:
+                    if caregiver.caregiver_id not in charged_flat_rates:
+                        cost = caregiver.flat_rate
+                        charged_flat_rates.add(caregiver.caregiver_id)
+                elif caregiver.hourly_rate is not None:
+                    hours = Decimal(
+                        str(segment.window.end.timestamp() - segment.window.start.timestamp())
+                    )
+                    hours /= Decimal("3600")
+                    cost = caregiver.hourly_rate * hours
+            cost = cost.quantize(MONEY_QUANTUM, rounding=ROUND_HALF_UP)
+            total += cost
+            deterministic_segments.append(segment.model_copy(update={"estimated_cost": cost}))
+
+        return deterministic_segments, total.quantize(MONEY_QUANTUM, rounding=ROUND_HALF_UP)
+
+    @staticmethod
+    def _warn_on_cost_mismatches(
+        proposed_plan: RecoveryPlan,
+        deterministic_segments: list[RecoveryPlanSegment],
+        total_cost: Decimal,
+        warnings: list[str],
+    ) -> None:
+        proposed_by_id = {
+            segment.segment_id: segment.estimated_cost
+            for segment in proposed_plan.coverage_segments
+        }
+        for segment in deterministic_segments:
+            if proposed_by_id.get(segment.segment_id) != segment.estimated_cost:
+                warnings.append(
+                    f"Recomputed cost for segment {segment.segment_id}: {segment.estimated_cost}."
+                )
+        if proposed_plan.estimated_cost != total_cost:
+            warnings.append(f"Recomputed plan total cost: {total_cost}.")
+
+    @staticmethod
+    def _add_preference_warnings(
+        segments: list[RecoveryPlanSegment],
+        caregivers: dict[str, Caregiver],
+        preferences: FamilyPreferences,
+        warnings: list[str],
+    ) -> None:
+        used_caregivers = [
+            caregivers[segment.assigned_person_id]
+            for segment in segments
+            if segment.source is CoverageSource.CAREGIVER
+            and segment.assigned_person_id in caregivers
+        ]
+        if (
+            preferences.prefer_family_first
+            and used_caregivers
+            and not any(item.relationship == "family" for item in used_caregivers)
+        ):
+            warnings.append("Plan does not satisfy the soft preference to use family first.")
+
+        handoffs = sum(
+            previous.assigned_person_id != current.assigned_person_id
+            for previous, current in zip(segments, segments[1:], strict=False)
+        )
+        if preferences.prefer_fewer_handoffs and handoffs > 1:
+            warnings.append("Plan has multiple handoffs despite the soft preference for fewer.")
+
+
+def _windows_overlap(left: CoverageWindow, right: CoverageWindow) -> bool:
+    return left.start < right.end and right.start < left.end

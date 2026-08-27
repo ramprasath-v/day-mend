@@ -41,7 +41,7 @@ class PlanAssumptionStatus(StrEnum):
 class PlanValidationState(StrEnum):
     """Result of deterministic plan validation."""
 
-    PENDING = "PENDING"
+    NOT_VALIDATED = "NOT_VALIDATED"
     VALID = "VALID"
     INVALID = "INVALID"
 
@@ -76,6 +76,7 @@ class CalendarEvent(ContractModel):
     window: CoverageWindow
     location: str | None = None
     movable: bool = False
+    critical: bool = False
 
 
 class Caregiver(ContractModel):
@@ -83,20 +84,53 @@ class Caregiver(ContractModel):
 
     caregiver_id: str
     name: str
-    trusted: bool
+    is_trusted: bool
     relationship: str | None = None
     availability: list[CoverageWindow] = Field(default_factory=list)
     hourly_rate: Decimal | None = Field(default=None, ge=0)
+    flat_rate: Decimal | None = Field(default=None, ge=0)
+    handoff_buffer_minutes: int = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def has_at_most_one_price_type(self) -> "Caregiver":
+        if self.hourly_rate is not None and self.flat_rate is not None:
+            raise ValueError("caregiver cannot have both hourly_rate and flat_rate")
+        return self
+
+
+class FamilyPreferences(ContractModel):
+    """Soft priorities that help the agent rank otherwise valid plans."""
+
+    prefer_family_first: bool = False
+    prefer_fewer_handoffs: bool = False
+    prefer_parent_a_morning_coverage: bool = False
+    avoid_rescheduling_customer_meetings: bool = False
+    preferred_backup_order: list[str] = Field(default_factory=list)
+    preferred_handoff_location: str | None = None
 
 
 class FamilyPolicy(ContractModel):
-    """Family preferences and deterministic autonomy boundaries."""
+    """Hard rules and autonomy boundaries enforced deterministically."""
 
-    trusted_caregiver_ids: set[str] = Field(default_factory=set)
-    automatic_spend_limit: Decimal = Field(default=Decimal("0"), ge=0)
+    require_trusted_caregiver: bool = True
+    unapproved_caregiver_allowed: bool = False
+    automatic_spend_limit: Decimal = Field(
+        default=Decimal("0"),
+        ge=0,
+        description=(
+            "Autonomy threshold above which a feasible plan requires approval; not a budget "
+            "or feasibility limit."
+        ),
+    )
     currency: str = Field(default="USD", min_length=3, max_length=3)
     minimum_handoff_minutes: int = Field(default=0, ge=0)
-    preferences: dict[str, Any] = Field(default_factory=dict)
+
+
+class CoverageSource(StrEnum):
+    """Kind of person assigned to a coverage segment."""
+
+    CAREGIVER = "CAREGIVER"
+    PARENT = "PARENT"
 
 
 class RecoveryPlanSegment(ContractModel):
@@ -104,16 +138,20 @@ class RecoveryPlanSegment(ContractModel):
 
     segment_id: str
     window: CoverageWindow
-    assigned_caregiver_id: str
-    source: str
+    assigned_person_id: str
+    source: CoverageSource
     estimated_cost: Decimal = Field(default=Decimal("0"), ge=0)
 
 
 class PlanAssumption(ContractModel):
-    """A world-state claim on which a plan depends."""
+    """A world-state fact on which coverage depends, not a policy-evaluation result."""
 
     assumption_id: str
-    assumption_type: str
+    assumption_type: str = Field(
+        description=(
+            "World-state fact type; cost thresholds and approval requirements are not assumptions."
+        )
+    )
     subject_id: str
     relevant_window: CoverageWindow | None = None
     value: Any | None = None
@@ -140,7 +178,7 @@ class RecoveryPlan(ContractModel):
     calendar_changes: list[CalendarEvent] = Field(default_factory=list)
     estimated_cost: Decimal = Field(default=Decimal("0"), ge=0)
     assumptions: list[PlanAssumption] = Field(default_factory=list)
-    validation_state: PlanValidationState = PlanValidationState.PENDING
+    validation_state: PlanValidationState = PlanValidationState.NOT_VALIDATED
     validation_errors: list[str] = Field(default_factory=list)
 
 

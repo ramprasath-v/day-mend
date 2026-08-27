@@ -30,18 +30,45 @@ verification succeeds.
 1. Record a disruption as a persistent `RecoveryCase`.
 2. Gather current family, calendar, caregiver, availability, and policy context.
 3. Have one Strands Recovery Agent produce a structured `RecoveryPlan`.
-4. Validate all hard constraints deterministically.
-5. Execute valid actions and observe their real outcomes.
+4. Validate all hard constraints deterministically; during initial planning, return structured
+   findings to that same agent for at most two repairs (three proposals total).
+5. Accept only a valid Plan A, then execute valid actions and observe their real outcomes.
 6. Continue, replan from updated state, or request approval as needed.
 7. Resume the same case after a decision or response.
 8. Mark the case `RESOLVED` only after deterministic completion verification.
 
 ## Current status
 
-**Phase 0 — repository foundation.** The repository currently contains typed domain contracts,
-project guardrails, architecture and scenario documentation, and contract-level tests. It does
-not yet implement the Strands agent, Bedrock connection, planning, deterministic business
-validation, execution, replanning, persistence, APIs, integrations, or frontend.
+**Milestone 1 — COMPLETE.** The repository contains one real Strands Recovery Agent, five
+read-only context tools, typed structured plan output, the synthetic primary scenario, and an
+independent deterministic validator. Initial planning now has a bounded validation-and-repair
+loop: context is gathered once, each proposal is validated, and structured findings are returned
+to the same agent for up to three total proposals. A real Nova Pro smoke invoked all five tools,
+repaired two rejected drafts, and reached `valid=true` on attempt 3. The final plan fully covered
+08:00–16:00, respected caregiver availability and parent calendars, cost `$92.00`
+deterministically, and correctly reported `requires_approval=true` against the `$30` automatic
+spend threshold. All offline tests and quality checks pass.
+
+Milestone 1 does not execute plan actions. Its repairs correct a proposal that was never valid
+while the authoritative world state remains unchanged. Replanning after an external world-state
+change, approval/resume, persistence, APIs, integrations, and frontend work remain future
+milestones.
+
+## Preferences, policy, and trust
+
+`FamilyPreferences` contains soft priorities used by the agent to rank otherwise valid plans,
+such as preferring family coverage or fewer handoffs. A preference violation can produce a
+validator warning but cannot make a plan invalid.
+
+`FamilyPolicy` contains hard rules enforced by deterministic code, including caregiver trust,
+whether unapproved caregivers may be used, the automatic-spend boundary, and the minimum
+handoff buffer. `Caregiver.is_trusted` is the sole authoritative trust state for an individual
+caregiver; policy does not duplicate a caregiver allowlist.
+
+The automatic-spend limit determines whether a valid proposal would require approval before
+execution. It is not a planning budget: exceeding it does not make an otherwise feasible plan
+invalid, and coverage must never be sacrificed to avoid approval. Milestone 1 reports that
+boundary but does not implement approval or execute the plan.
 
 ## Repository structure
 
@@ -54,6 +81,7 @@ validation, execution, replanning, persistence, APIs, integrations, or frontend.
 │   ├── app
 │   │   ├── agent
 │   │   ├── api
+│   │   ├── fixtures
 │   │   ├── models
 │   │   ├── repositories
 │   │   ├── services
@@ -76,7 +104,27 @@ cd backend
 uv sync --dev
 ```
 
-Run the contract tests and quality checks:
+The project uses `strands-agents` with its native Amazon Bedrock provider. AWS credentials are
+resolved through the normal AWS SDK credential chain and are never stored in this repository.
+Configure a region and, optionally, override the default model:
+
+```bash
+export AWS_REGION=us-west-2
+export DAYMEND_BEDROCK_MODEL_ID=global.anthropic.claude-sonnet-4-6
+```
+
+Your AWS identity must have Bedrock model access and permission to invoke the configured model.
+Run the real planning and validation smoke path from `backend/`:
+
+```bash
+uv run python -m app.agent.demo
+```
+
+The smoke output contains the configured model ID, tools used, proposal and validation summaries
+for each attempt, and the final safety/cost/autonomy result. It does not expose model
+chain-of-thought.
+
+Run the offline tests and quality checks:
 
 ```bash
 uv run pytest
@@ -94,3 +142,6 @@ and submission polish. Each milestone and its exit criterion is documented in
 The primary end-to-end scenario is documented in
 [`docs/demo-flow.md`](docs/demo-flow.md), and architectural boundaries are documented in
 [`docs/architecture.md`](docs/architecture.md).
+
+The fixture is deterministic and synthetic. Tool selection and structured plan generation in
+the smoke path are performed by the real Strands/Bedrock agent; no Plan A is hardcoded.

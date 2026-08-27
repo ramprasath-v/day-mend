@@ -5,9 +5,18 @@
 **Goal:** A nanny cancellation causes the agent to gather context through tools, produce a
 structured Plan A, and submit it to deterministic validation.
 
+**Status:** Complete. All offline tests and quality checks pass. Live Nova Pro execution invoked
+all five tools once, used structured deterministic findings to repair two invalid proposals in
+the same agent conversation, and reached a valid third proposal. The final plan covered the full
+window, respected availability and calendars, and retained the correct autonomy-threshold
+behavior.
+
 **Exit criterion:** An automated test or repeatable local demonstration shows real Strands
 reasoning and tool calls producing a typed `RecoveryPlan`, and the deterministic validator
 accepts a complete valid plan and rejects representative hard-constraint violations.
+
+Initial validation repair is limited to three proposals while world state is unchanged. It does
+not include Milestone 2 invalidation or replanning after an external event.
 
 ## Milestone 2 — Plan invalidation and replanning
 
@@ -57,4 +66,3 @@ video, and Devpost submission.
 **Exit criterion:** Submission materials accurately describe the verified build, the public
 repository is runnable from its documentation, the demo video shows the primary scenario, and
 all event requirements have been checked before submission.
-

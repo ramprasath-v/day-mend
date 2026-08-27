@@ -8,7 +8,11 @@ from pydantic import ValidationError
 
 from app.models import (
     CalendarEvent,
+    Caregiver,
+    CoverageSource,
     CoverageWindow,
+    FamilyPolicy,
+    FamilyPreferences,
     PlanAssumption,
     RecoveryCase,
     RecoveryEvent,
@@ -65,8 +69,8 @@ def test_basic_recovery_plan_construction() -> None:
             RecoveryPlanSegment(
                 segment_id="segment-1",
                 window=gap,
-                assigned_caregiver_id="caregiver-1",
-                source="trusted_network",
+                assigned_person_id="caregiver-1",
+                source=CoverageSource.CAREGIVER,
                 estimated_cost=Decimal("120.00"),
             )
         ],
@@ -83,7 +87,7 @@ def test_basic_recovery_plan_construction() -> None:
         assumptions=[assumption],
     )
 
-    assert plan.coverage_segments[0].assigned_caregiver_id == "caregiver-1"
+    assert plan.coverage_segments[0].assigned_person_id == "caregiver-1"
     assert plan.assumptions == [assumption]
     assert plan.estimated_cost == Decimal("120.00")
 
@@ -113,3 +117,28 @@ def test_recovery_case_represents_active_plan_and_event_history() -> None:
     assert recovery_case.active_recovery_plan == active_plan
     assert recovery_case.events == [event]
     assert recovery_case.status is RecoveryStatus.PLANNING
+
+
+def test_preferences_and_policy_are_separate_contracts() -> None:
+    preferences = FamilyPreferences(prefer_family_first=True, prefer_fewer_handoffs=True)
+    policy = FamilyPolicy(
+        require_trusted_caregiver=True,
+        unapproved_caregiver_allowed=False,
+        automatic_spend_limit=Decimal("30"),
+    )
+
+    assert preferences.prefer_family_first is True
+    assert policy.require_trusted_caregiver is True
+    assert "prefer_family_first" not in FamilyPolicy.model_fields
+
+
+def test_caregiver_is_authoritative_trust_source() -> None:
+    caregiver = Caregiver(
+        caregiver_id="grandma",
+        name="Grandma",
+        is_trusted=True,
+        relationship="family",
+    )
+
+    assert caregiver.is_trusted is True
+    assert "trusted_caregiver_ids" not in FamilyPolicy.model_fields
