@@ -52,6 +52,14 @@ without approval, and both approval outcomes resume the same case with an audita
 
 **Goal:** Expose the real recovery workflow through APIs.
 
+**Status:** Complete. FastAPI routes validate and map HTTP data while a thin application service
+coordinates the existing workflow boundaries. Offline API tests cover health, create/read,
+caregiver decline and replanning, approval/rejection/idempotency, concurrency, safe responses,
+CORS, OpenAPI, and a complete same-case lifecycle to `RESOLVED`. A live FastAPI → Nova Pro →
+DynamoDB smoke created and resolved case `d436c360-bda5-4625-9521-67d8932f87b0`, with one
+invalidated assumption, valid `plan_B`, a persisted approval, five successful simulated actions,
+and final version 6.
+
 **Exit criterion:** Documented FastAPI endpoints can create/read a recovery case, accept
 external events and approval decisions, advance the actual workflow, and pass API tests.
 

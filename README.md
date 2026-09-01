@@ -62,6 +62,13 @@ execute exactly once, and only the deterministic completion verifier can set `RE
 `daymend-recovery-cases-dev` DynamoDB smoke persisted and reloaded the same case through approval,
 four successful actions, completion verification, and final `RESOLVED` state at version 4.
 
+**Milestone 4 — COMPLETE.** A thin FastAPI boundary now exposes health, recovery creation/read,
+external caregiver events, and approval decisions. `RecoveryApplicationService` coordinates the
+existing planning, invalidation, repository, autonomy, execution, and completion services; routes
+contain no recovery policy or persistence logic. The offline HTTP lifecycle reaches `RESOLVED`
+through the real deterministic services, and a live Nova Pro + DynamoDB API smoke resolved the
+same case after Plan B approval.
+
 These are deliberately separate mechanisms:
 
 - **Initial-plan repair:** a draft was never valid; world state is unchanged; validator findings
@@ -69,8 +76,8 @@ These are deliberately separate mechanisms:
 - **World-state replanning:** Plan A was valid; a recorded external event changes authoritative
   facts; deterministic impact analysis begins a new Plan B planning cycle.
 
-Milestone 3 uses simulated explicit actions only; there is no real booking, payment, calendar, or
-messaging integration. APIs and frontend work remain future milestones.
+Execution still uses simulated explicit actions only; there is no real booking, payment,
+calendar, messaging, authentication, or frontend integration.
 
 ## Preferences, policy, and trust
 
@@ -184,6 +191,55 @@ Run the offline tests and quality checks:
 uv run pytest
 uv run ruff check .
 uv run ruff format --check .
+```
+
+## FastAPI
+
+Run the local API from `backend/` with process-local persistence:
+
+```bash
+export DAYMEND_RECOVERY_REPOSITORY=memory
+export DAYMEND_ALLOWED_ORIGINS=http://localhost:4200
+.venv/bin/uvicorn app.main:app --reload --port 8000
+```
+
+Use `DAYMEND_RECOVERY_REPOSITORY=dynamodb` plus `DAYMEND_RECOVERY_TABLE` and `AWS_REGION`
+for the AWS demo repository. Planning uses `DAYMEND_BEDROCK_MODEL_ID` through the existing
+Recovery Agent configuration. Startup never creates a DynamoDB table; use the explicit setup
+helper above.
+
+The API exposes:
+
+- `GET /health`
+- `POST /recoveries`
+- `GET /recoveries/{recovery_case_id}`
+- `POST /recoveries/{recovery_case_id}/events`
+- `POST /recoveries/{recovery_case_id}/approvals/{approval_id}`
+
+Interactive OpenAPI documentation is available at `/docs`, with the schema at `/openapi.json`.
+Mutation requests may include `expected_version`; stale versions return `409` without overwriting
+newer state. CORS origins are a comma-separated allowlist and default only to
+`http://localhost:4200`.
+
+Example create request:
+
+```json
+{
+  "disruption_type": "CHILDCARE_UNAVAILABLE",
+  "occurred_at": "2026-08-27T07:02:00-07:00",
+  "caregiver_id": "nanny",
+  "message": "I'm sick and can't come today."
+}
+```
+
+Run the live API lifecycle smoke with:
+
+```bash
+AWS_REGION=us-east-1 \
+DAYMEND_BEDROCK_MODEL_ID=amazon.nova-pro-v1:0 \
+DAYMEND_RECOVERY_REPOSITORY=dynamodb \
+DAYMEND_RECOVERY_TABLE=daymend-recovery-cases-dev \
+.venv/bin/python -m tests.live_api_smoke
 ```
 
 ## Roadmap

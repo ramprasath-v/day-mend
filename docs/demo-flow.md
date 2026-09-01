@@ -89,3 +89,23 @@ reloaded `APPROVAL_REQUIRED`, approved the exact active Plan B, completed four s
 verified completion, and reloaded the same case as `RESOLVED` at version 4. The harness reuses the
 tested Milestone 2 aggregate so that storage/approval evidence is independent from fresh model
 variance; the separate Milestone 2 smoke remains the real agent/replanning proof.
+
+## Milestone 4 boundary
+
+The entire primary flow is now available over HTTP. `POST /recoveries` records the disruption,
+invokes the existing initial-planning workflow, persists Plan A, and returns the new case ID.
+`GET /recoveries/{id}` returns a frontend-safe snapshot. A caregiver response sent to the event
+endpoint follows the same authoritative invalidation and replanning path from Milestone 2, then
+the existing autonomy gate exposes any pending approval. The approval endpoint uses Milestone 3
+decision, execution, and completion services; it does not reproduce those rules in a controller.
+
+The offline API demo substitutes a deterministic planning boundary only. Its real deterministic
+services preserve the case ID from `WAITING_FOR_RESPONSE` through `APPROVAL_REQUIRED`, four
+successful actions, and `RESOLVED`. The live API smoke additionally proved the real Nova Pro and
+DynamoDB path with case `d436c360-bda5-4625-9521-67d8932f87b0`: Grandma's response invalidated
+one Plan A assumption, Nova produced valid `plan_B`, approval resumed the same persisted case,
+and completion reached `RESOLVED` at version 6.
+
+FastAPI does not decide plans, validity, approval requirements, or completion. There is no UI,
+authentication, paid-provider search, real calendar/messaging integration, or deployment work in
+this milestone.

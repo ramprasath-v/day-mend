@@ -249,3 +249,44 @@ Milestone 2 already separately proved live Nova Pro replanning. Fresh combined a
 subject to bounded model variability: recent attempts correctly stopped before persistence when
 Nova did not produce a valid Plan A within three attempts. No validator or retry limit was
 weakened to force the demo forward.
+
+## Milestone 4 implementation
+
+FastAPI is an adapter, not a workflow engine. The dependency direction is:
+
+```text
+HTTP request
+    → FastAPI route + API request validation
+    → RecoveryApplicationService
+    → existing planning / invalidation / approval / execution / completion services
+    → RecoveryCaseRepository
+    → HTTP response mapper
+```
+
+`RecoveryApplicationService` provides four use cases: start a recovery, read a recovery, process
+an external event, and decide an approval. The real `StrandsRecoveryPlanningGateway` adapts the
+existing initial and world-state planning functions to a narrow injectable boundary. Offline
+API tests replace only that model boundary; deterministic validation, invalidation, autonomy,
+execution, completion, and persistence code remain real.
+
+Repository construction is selected by `DAYMEND_RECOVERY_REPOSITORY=memory|dynamodb`. AWS region,
+table, and model configuration continue through their existing environment settings, outside
+routes. The default is in-memory persistence for safe local startup. DynamoDB conditional saves
+remain the final concurrency guard; optional request `expected_version` values reject already
+stale commands earlier with the same safe `409` semantics.
+
+Public response models deliberately omit `context_state`, model interactions, credentials, and
+other internal data. They expose the disruption, active plan, plan-history summaries, events,
+invalidated assumptions, pending and historical approvals, execution results, deterministic
+cost, trigger, timestamps, and version needed by a later recovery UI. CORS uses a configurable
+origin allowlist, with only Angular's `http://localhost:4200` allowed by default. Health checks do
+not touch Bedrock or DynamoDB, and startup never creates infrastructure.
+
+The verified live API path used Nova Pro and `daymend-recovery-cases-dev`. HTTP creation produced
+Plan A, a caregiver-decline request invalidated one assumption and produced valid `plan_B`, the
+API exposed a pending approval, and approval resumed five simulated actions plus deterministic
+completion. Recovery case `d436c360-bda5-4625-9521-67d8932f87b0` remained unchanged throughout
+and finished `RESOLVED` at version 6.
+
+No Angular, provider marketplace, external calendar/messaging, authentication, AgentCore,
+CloudWatch, or additional agent was added.
