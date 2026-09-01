@@ -49,10 +49,21 @@ repaired two rejected drafts, and reached `valid=true` on attempt 3. The final p
 deterministically, and correctly reported `requires_approval=true` against the `$30` automatic
 spend threshold. All offline tests and quality checks pass.
 
-Milestone 1 does not execute plan actions. Its repairs correct a proposal that was never valid
-while the authoritative world state remains unchanged. Replanning after an external world-state
-change, approval/resume, persistence, APIs, integrations, and frontend work remain future
-milestones.
+**Milestone 2 — IMPLEMENTED; LIVE VERIFICATION PENDING.** A typed caregiver-decline event now
+updates request-local authoritative world state, invalidates only matching plan assumptions,
+calculates impacted and preserved segments plus newly uncovered windows, and sends that state to
+the same Recovery Agent. Plan B uses the existing three-attempt deterministic validation-repair
+mechanism. A successful Plan B becomes active while valid Plan A remains in in-memory history.
+
+These are deliberately separate mechanisms:
+
+- **Initial-plan repair:** a draft was never valid; world state is unchanged; validator findings
+  correct the draft.
+- **World-state replanning:** Plan A was valid; a recorded external event changes authoritative
+  facts; deterministic impact analysis begins a new Plan B planning cycle.
+
+Neither milestone executes plan actions. Approval interaction, persistence, APIs, integrations,
+and frontend work remain future milestones.
 
 ## Preferences, policy, and trust
 
@@ -118,6 +129,13 @@ Run the real planning and validation smoke path from `backend/`:
 
 ```bash
 uv run python -m app.agent.demo
+```
+
+Run the live Milestone 2 Plan A → caregiver decline → Plan B smoke:
+
+```bash
+DAYMEND_BEDROCK_MODEL_ID=amazon.nova-pro-v1:0 \
+uv run python -m app.agent.replanning_demo
 ```
 
 The smoke output contains the configured model ID, tools used, proposal and validation summaries

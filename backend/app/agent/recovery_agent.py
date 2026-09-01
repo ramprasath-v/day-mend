@@ -14,7 +14,7 @@ from app.agent.instructions import RECOVERY_AGENT_INSTRUCTIONS
 from app.fixtures import DemoScenario, get_demo_scenario
 from app.models import ContractModel, PlanValidationState, RecoveryPlan
 from app.services import PlanValidationIssue, PlanValidationResult, PlanValidator
-from app.tools import RECOVERY_CONTEXT_TOOLS
+from app.tools import RECOVERY_CONTEXT_TOOLS, use_scenario
 
 MAX_PLAN_ATTEMPTS = 3
 RECOVERY_CONTEXT_TOOL_NAMES = {tool.tool_name for tool in RECOVERY_CONTEXT_TOOLS}
@@ -112,54 +112,31 @@ def run_initial_planning_session(
     if not 1 <= max_attempts <= MAX_PLAN_ATTEMPTS:
         raise ValueError(f"max_attempts must be between 1 and {MAX_PLAN_ATTEMPTS}")
 
-    deterministic_validator = validator or PlanValidator()
-    agent(
-        "Analyze this disruption and build a feasible recovery strategy: " + disruption + " "
-        "Gather all required context with the five tools and complete the feasibility, cost, "
-        "and autonomy checks in your instructions. Do not call the RecoveryPlan structured "
-        "output tool yet. Do not expose private reasoning; finish with only a brief readiness "
-        "confirmation after the analysis is complete."
-    )
-
-    attempts: list[PlanningAttempt] = []
-    proposal_prompt = (
-        "Using the authoritative tool results and completed analysis already in this "
-        "conversation, return one RecoveryPlan now. Recheck exact coverage, caregiver "
-        "availability, parent calendars, handoffs, identities, pricing, and autonomy before "
-        "serializing it."
-    )
-
-    for attempt_number in range(1, max_attempts + 1):
-        result = agent(proposal_prompt, structured_output_model=RecoveryPlan)
-        if result.structured_output is None:
-            raise RuntimeError("Strands returned no structured RecoveryPlan")
-
-        proposed_plan = result.structured_output.model_copy(
-            update={
-                "validation_state": PlanValidationState.NOT_VALIDATED,
-                "validation_errors": [],
-            }
+    with use_scenario(scenario):
+        agent(
+            "Analyze this disruption and build a feasible recovery strategy: " + disruption + " "
+            "Gather all required context with the five tools and complete the feasibility, cost, "
+            "and autonomy checks in your instructions. Do not call the RecoveryPlan structured "
+            "output tool yet. Do not expose private reasoning; finish with only a brief readiness "
+            "confirmation after the analysis is complete."
         )
-        validation = deterministic_validator.validate(proposed_plan, scenario)
-        attempts.append(
-            PlanningAttempt(
-                attempt_number=attempt_number,
-                proposed_plan=proposed_plan,
-                validation=validation,
-            )
+
+        attempts = run_bounded_plan_attempts(
+            agent=agent,
+            scenario=scenario,
+            proposal_prompt=(
+                "Using the authoritative tool results and completed analysis already in this "
+                "conversation, return one RecoveryPlan now. Recheck exact coverage, caregiver "
+                "availability, parent calendars, handoffs, identities, pricing, and autonomy "
+                "before serializing it."
+            ),
+            validator=validator,
+            max_attempts=max_attempts,
+            repair_scope="initial-planning",
         )
-        if validation.valid:
-            return _planning_result(
-                success=True,
-                attempts=attempts,
-                recorder=recorder,
-                model_id=model_id,
-            )
-        if attempt_number < max_attempts:
-            proposal_prompt = _repair_prompt(attempt_number + 1, validation.issues)
 
     return _planning_result(
-        success=False,
+        success=attempts[-1].validation.valid,
         attempts=attempts,
         recorder=recorder,
         model_id=model_id,
@@ -198,15 +175,65 @@ def run_recovery_planning(
     return run_initial_planning(disruption, config=config)
 
 
-def _repair_prompt(attempt_number: int, issues: list[PlanValidationIssue]) -> str:
+def run_bounded_plan_attempts(
+    *,
+    agent: RecoveryAgentLike,
+    scenario: DemoScenario,
+    proposal_prompt: str,
+    validator: PlanValidator | None = None,
+    max_attempts: int = MAX_PLAN_ATTEMPTS,
+    repair_scope: str,
+) -> list[PlanningAttempt]:
+    """Validate and repair draft proposals without applying another world-state change."""
+
+    if not 1 <= max_attempts <= MAX_PLAN_ATTEMPTS:
+        raise ValueError(f"max_attempts must be between 1 and {MAX_PLAN_ATTEMPTS}")
+    deterministic_validator = validator or PlanValidator()
+    attempts: list[PlanningAttempt] = []
+    for attempt_number in range(1, max_attempts + 1):
+        result = agent(proposal_prompt, structured_output_model=RecoveryPlan)
+        if result.structured_output is None:
+            raise RuntimeError("Strands returned no structured RecoveryPlan")
+        proposed_plan = result.structured_output.model_copy(
+            update={
+                "validation_state": PlanValidationState.NOT_VALIDATED,
+                "validation_errors": [],
+            }
+        )
+        validation = deterministic_validator.validate(proposed_plan, scenario)
+        attempts.append(
+            PlanningAttempt(
+                attempt_number=attempt_number,
+                proposed_plan=proposed_plan,
+                validation=validation,
+            )
+        )
+        if validation.valid:
+            break
+        if attempt_number < max_attempts:
+            proposal_prompt = _repair_prompt(
+                attempt_number + 1,
+                validation.issues,
+                repair_scope=repair_scope,
+            )
+    return attempts
+
+
+def _repair_prompt(
+    attempt_number: int,
+    issues: list[PlanValidationIssue],
+    *,
+    repair_scope: str,
+) -> str:
     feedback = json.dumps(
         [issue.model_dump(mode="json") for issue in issues],
         separators=(",", ":"),
     )
     return (
-        f"Initial-planning proposal attempt {attempt_number - 1} was rejected by the "
+        f"{repair_scope} proposal attempt {attempt_number - 1} was rejected by the "
         "authoritative deterministic validator. The world state and tool context have not "
-        "changed, so do not re-fetch all context. Repair the same initial plan and return a "
+        "changed since that proposal, so do not re-fetch all context. Repair the draft and "
+        "return a "
         f"complete replacement RecoveryPlan for attempt {attempt_number}. Fix every structured "
         f"validation issue below; do not claim that an issue is waived or already valid. {feedback}"
     )

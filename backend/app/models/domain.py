@@ -31,6 +31,13 @@ class RecoveryStatus(StrEnum):
     FAILED = "FAILED"
 
 
+class RecoveryEventType(StrEnum):
+    """External or internal facts currently represented in recovery history."""
+
+    DISRUPTION_DETECTED = "DISRUPTION_DETECTED"
+    CAREGIVER_DECLINED = "CAREGIVER_DECLINED"
+
+
 class PlanAssumptionStatus(StrEnum):
     """Whether an assumption may still support an active plan."""
 
@@ -158,11 +165,14 @@ class PlanAssumption(ContractModel):
     status: PlanAssumptionStatus = PlanAssumptionStatus.ACTIVE
     invalidated_at: AwareDatetime | None = None
     invalidation_reason: str | None = None
+    triggering_event_id: str | None = None
 
     @model_validator(mode="after")
     def invalidation_details_match_status(self) -> "PlanAssumption":
         if self.status is PlanAssumptionStatus.ACTIVE and (
-            self.invalidated_at is not None or self.invalidation_reason is not None
+            self.invalidated_at is not None
+            or self.invalidation_reason is not None
+            or self.triggering_event_id is not None
         ):
             raise ValueError("active assumptions cannot have invalidation details")
         if self.status is PlanAssumptionStatus.INVALIDATED and self.invalidated_at is None:
@@ -206,9 +216,22 @@ class RecoveryEvent(ContractModel):
     """An immutable-style fact recorded in a recovery case history."""
 
     event_id: str
-    event_type: str
+    event_type: RecoveryEventType
     occurred_at: AwareDatetime
+    caregiver_id: str | None = None
+    relevant_window: CoverageWindow | None = None
+    message: str | None = None
     details: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def caregiver_decline_has_response_details(self) -> "RecoveryEvent":
+        if self.event_type is RecoveryEventType.CAREGIVER_DECLINED and (
+            not self.caregiver_id or not self.message or self.relevant_window is None
+        ):
+            raise ValueError(
+                "caregiver decline events require caregiver_id, message, and relevant_window"
+            )
+        return self
 
 
 class RecoveryCase(ContractModel):
@@ -218,12 +241,14 @@ class RecoveryCase(ContractModel):
     status: RecoveryStatus = RecoveryStatus.DETECTED
     disruption: str
     coverage_gap: CoverageWindow
+    uncovered_windows: list[CoverageWindow] = Field(default_factory=list)
     context_state: dict[str, Any] = Field(default_factory=dict)
     active_recovery_plan: RecoveryPlan | None = None
     previous_plans: list[RecoveryPlan] = Field(default_factory=list)
     assumptions: list[PlanAssumption] = Field(default_factory=list)
     events: list[RecoveryEvent] = Field(default_factory=list)
     pending_approval: ApprovalRequest | None = None
+    latest_replan_trigger_event_id: str | None = None
     created_at: AwareDatetime
     updated_at: AwareDatetime
 

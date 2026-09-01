@@ -45,5 +45,23 @@ This correction loop does not process external responses: it repairs an initial 
 was never valid while world state is unchanged. It is not the caregiver-decline replanning shown
 in steps 6–9.
 
-Steps 6–16 remain future milestones. No caregiver decline, invalidation, replanning, approval,
-execution, or completion branch has been scripted or implemented.
+## Milestone 2 boundary
+
+The current Milestone 2 implementation covers steps 6–9 as a real state transition rather than
+a scripted branch. A `CAREGIVER_DECLINED` event records Grandma's response and affected window.
+Deterministic code removes that window from authoritative availability, invalidates the matching
+Plan A assumption, identifies the Grandma segment as impacted, exposes all other segments as
+preserved, and stores valid Plan A in case history. The same Recovery Agent refreshes tools from
+the updated state and proposes Plan B; deterministic validation and the existing bounded draft
+repair apply before Plan B can become active.
+
+The event says only that Grandma declined. No application branch selects a particular
+replacement caregiver. The agent reasons from updated tools and the validator rejects any Plan B
+that assigns Grandma during the declined window.
+
+This differs from Milestone 1 repair: Plan A was already valid, and replanning starts only after
+the event changes authoritative world state. Any invalid Plan B draft is then corrected by the
+inner Milestone 1-style validation loop without applying another external event.
+
+Steps 10–16 remain future milestones. Milestone 2 may report `requires_approval`, but it does not
+request approval, execute actions, persist state, or mark the case `RESOLVED`.

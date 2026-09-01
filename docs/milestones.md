@@ -23,8 +23,16 @@ not include Milestone 2 invalidation or replanning after an external event.
 **Goal:** A caregiver decline invalidates the relevant assumption, recomputes the uncovered
 segment, and causes the agent to replan from updated world state.
 
+**Status:** Implemented offline; live Nova Pro verification pending. The event, authoritative
+availability update, targeted assumption invalidation, localized impact analysis, Plan A
+history, same-agent Plan B generation, and bounded Plan B validation repair are covered by
+deterministic and narrow orchestration tests.
+
 **Exit criterion:** A recorded external decline updates the case without a hardcoded branch,
 preserves still-valid plan portions, and produces a newly validated plan for the remaining gap.
+
+Milestone 2 does not execute the plan, persist the case, or implement approval. `EXECUTING`
+indicates that a valid replacement plan is ready for later execution work; it is not completion.
 
 ## Milestone 3 — Persistence + autonomy + approval/resume
 

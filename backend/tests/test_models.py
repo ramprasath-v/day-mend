@@ -16,6 +16,7 @@ from app.models import (
     PlanAssumption,
     RecoveryCase,
     RecoveryEvent,
+    RecoveryEventType,
     RecoveryPlan,
     RecoveryPlanSegment,
     RecoveryStatus,
@@ -117,6 +118,32 @@ def test_recovery_case_represents_active_plan_and_event_history() -> None:
     assert recovery_case.active_recovery_plan == active_plan
     assert recovery_case.events == [event]
     assert recovery_case.status is RecoveryStatus.PLANNING
+
+
+def test_caregiver_decline_event_requires_typed_response_context() -> None:
+    gap = CoverageWindow(start=utc_datetime(10), end=utc_datetime(13))
+    event = RecoveryEvent(
+        event_id="grandma-declined",
+        event_type=RecoveryEventType.CAREGIVER_DECLINED,
+        occurred_at=utc_datetime(9),
+        caregiver_id="grandma",
+        relevant_window=gap,
+        message="Sorry, I can't help today.",
+    )
+
+    assert event.event_type is RecoveryEventType.CAREGIVER_DECLINED
+    assert event.caregiver_id == "grandma"
+
+
+def test_caregiver_decline_event_rejects_missing_relevant_window() -> None:
+    with pytest.raises(ValidationError, match="require caregiver_id, message, and relevant_window"):
+        RecoveryEvent(
+            event_id="invalid-decline",
+            event_type=RecoveryEventType.CAREGIVER_DECLINED,
+            occurred_at=utc_datetime(9),
+            caregiver_id="grandma",
+            message="No longer available.",
+        )
 
 
 def test_preferences_and_policy_are_separate_contracts() -> None:

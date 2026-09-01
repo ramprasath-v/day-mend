@@ -151,3 +151,45 @@ error. Model choice remains environment-configurable.
 
 No execution, replanning, approval/resume, persistence, API, external calendar, or UI behavior
 is implemented in Milestone 1.
+
+## Milestone 2 implementation
+
+Milestone 2 introduces a separate world-state replanning path around the same Recovery Agent.
+A typed `CAREGIVER_DECLINED` `RecoveryEvent` records caregiver, message, relevant window, and
+timestamp. `PlanInvalidationService` applies it deterministically:
+
+1. subtract the declined window from the caregiver's authoritative availability;
+2. invalidate only active `CAREGIVER_AVAILABLE` assumptions for that caregiver and overlapping
+   window, recording reason, time, and triggering event ID;
+3. identify impacted coverage segments and newly uncovered windows;
+4. identify every other segment as preserved work; and
+5. append the event and valid Plan A snapshot to the in-memory `RecoveryCase` history before
+   entering `REPLANNING`.
+
+Context tools read a request-local `DemoScenario` snapshot. Initial planning sees the original
+fixture; after an event, the same tools see the updated caregiver availability. Preferences,
+policy, calendars, and unrelated caregiver facts are unchanged.
+
+The same Strands agent receives the recorded event, invalidated assumptions, active invalidated
+plan, impacted/preserved segments, uncovered windows, and refreshed tool context. It proposes a
+complete Plan B. `PlanValidator` checks Plan B against the updated scenario. If a Plan B draft is
+invalid, the shared bounded draft-repair function may make at most three total Plan B proposals;
+this inner repair does not apply another world-state event.
+
+On success, validated Plan B becomes active and the case returns to `EXECUTING`, meaning a valid
+plan is ready for later execution behavior. The case is never marked `RESOLVED`. On failure,
+invalid Plan B is not activated; the invalidated Plan A remains observable as the active affected
+plan and its previously valid snapshot remains in history.
+
+```text
+INITIAL PLAN REPAIR                 WORLD-STATE REPLANNING
+invalid draft                       previously valid Plan A
+unchanged world                     recorded external event
+validator feedback                  authoritative state update + impact analysis
+same planning cycle                 new Plan B planning cycle
+        │                                      │
+        └──── bounded validator repair ─────────┘
+```
+
+No persistence, approval interaction, external messaging/provider integration, API, UI, or
+multi-agent behavior is included.

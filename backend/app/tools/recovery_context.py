@@ -1,10 +1,35 @@
-"""Read-only Strands tools for the synthetic Milestone 1 scenario."""
+"""Read-only Strands tools for the active in-memory recovery world state."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any
 
 from strands import tool
 
-from app.fixtures import get_demo_scenario
+from app.fixtures import DemoScenario, get_demo_scenario
+
+_ACTIVE_SCENARIO: ContextVar[DemoScenario | None] = ContextVar(
+    "daymend_active_scenario",
+    default=None,
+)
+
+
+def get_active_scenario() -> DemoScenario:
+    """Return the request-local world state, or the unchanged demo fixture by default."""
+
+    return _ACTIVE_SCENARIO.get() or get_demo_scenario()
+
+
+@contextmanager
+def use_scenario(scenario: DemoScenario) -> Iterator[None]:
+    """Expose one authoritative scenario snapshot to every context tool in this context."""
+
+    token = _ACTIVE_SCENARIO.set(scenario)
+    try:
+        yield
+    finally:
+        _ACTIVE_SCENARIO.reset(token)
 
 
 @tool
@@ -15,7 +40,7 @@ def get_childcare_schedule() -> dict[str, Any]:
         JSON-serializable authoritative childcare schedule and unavailability facts.
     """
 
-    scenario = get_demo_scenario()
+    scenario = get_active_scenario()
     return {
         "normal_caregiver_id": scenario.normal_caregiver_id,
         "coverage_required_from": scenario.required_coverage.start.isoformat(),
@@ -36,7 +61,7 @@ def get_parent_calendars() -> dict[str, Any]:
         JSON-serializable parent identifiers and calendar events for the recovery date.
     """
 
-    scenario = get_demo_scenario()
+    scenario = get_active_scenario()
     return {
         "calendar_assignment_rule": (
             "A parent segment cannot overlap an event with critical=true or movable=false. "
@@ -74,7 +99,7 @@ def get_caregivers() -> dict[str, Any]:
         JSON-serializable caregiver records available to the recovery planner.
     """
 
-    scenario = get_demo_scenario()
+    scenario = get_active_scenario()
     return {
         "availability_is_authoritative": True,
         "assignment_rule": (
@@ -113,7 +138,7 @@ def get_family_preferences() -> dict[str, Any]:
         JSON-serializable soft preferences; these are not hard validation rules.
     """
 
-    return get_demo_scenario().preferences.model_dump(mode="json")
+    return get_active_scenario().preferences.model_dump(mode="json")
 
 
 @tool
@@ -127,7 +152,7 @@ def get_family_policy() -> dict[str, Any]:
         JSON-serializable policy values, including trust rules and the autonomy threshold.
     """
 
-    return get_demo_scenario().policy.model_dump(mode="json")
+    return get_active_scenario().policy.model_dump(mode="json")
 
 
 RECOVERY_CONTEXT_TOOLS = [
