@@ -1,0 +1,116 @@
+:host {
+  display: block;
+}
+.plan {
+  padding: 1.6rem;
+}
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+.eyebrow {
+  margin: 0 0 0.35rem;
+  color: var(--green);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+h2 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.65rem;
+  font-weight: 600;
+}
+.plan__total {
+  text-align: right;
+}
+.plan__total span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+.plan__total strong {
+  font-family: var(--serif);
+  font-size: 1.75rem;
+}
+.coverage-list {
+  margin-top: 1.4rem;
+}
+.coverage-row {
+  display: grid;
+  grid-template-columns: 22px 108px minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 64px;
+}
+.coverage-row__rail {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.coverage-row__rail span {
+  width: 11px;
+  height: 11px;
+  margin-top: 25px;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 1px #aabcb1;
+}
+.coverage-row__rail i {
+  flex: 1;
+  width: 1px;
+  background: #ced8d0;
+}
+.coverage-row time {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.77rem;
+}
+.coverage-row div:nth-child(3) strong,
+.coverage-row div:nth-child(3) span {
+  display: block;
+}
+.coverage-row div:nth-child(3) span {
+  margin-top: 0.18rem;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+.coverage-row b {
+  font-size: 0.78rem;
+}
+.coverage-row .included {
+  color: var(--green);
+  font-weight: 700;
+}
+.plan__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  background: var(--cream);
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.plan__footer strong {
+  color: var(--ink);
+}
+.calendar-icon {
+  color: var(--green);
+  font-size: 1rem;
+}
+@media (max-width: 520px) {
+  .coverage-row {
+    grid-template-columns: 20px 92px 1fr;
+  }
+  .coverage-row > b {
+    grid-column: 3;
+    margin-top: -0.7rem;
+  }
+}

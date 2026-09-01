@@ -1,0 +1,47 @@
+<section class="card plan" aria-labelledby="coverage-title">
+  <header class="section-heading">
+    <div>
+      <p class="eyebrow">{{ badge() }}</p>
+      <h2 id="coverage-title">{{ title() }}</h2>
+    </div>
+    <div class="plan__total">
+      <span>Recovery cost</span>
+      <strong>{{ money(plan().estimated_cost) | currency: 'USD' : 'symbol' : '1.0-0' }}</strong>
+    </div>
+  </header>
+  <div class="coverage-list">
+    @for (segment of plan().coverage_segments; track segment.segment_id; let index = $index) {
+      <article class="coverage-row">
+        <div class="coverage-row__rail" aria-hidden="true">
+          <span></span>
+          @if (index < plan().coverage_segments.length - 1) {
+            <i></i>
+          }
+        </div>
+        <time>
+          {{ segment.window.start | date: 'h:mm' }}–{{ segment.window.end | date: 'h:mm a' }}
+        </time>
+        <div>
+          <strong>{{ friendlyPerson(segment.assigned_person_id) }}</strong>
+          <span>{{ segment.source === 'PARENT' ? 'Parent coverage' : 'Trusted caregiver' }}</span>
+        </div>
+        @if (money(segment.estimated_cost) > 0) {
+          <b>{{ money(segment.estimated_cost) | currency: 'USD' : 'symbol' : '1.0-0' }}</b>
+        } @else {
+          <b class="included">Included</b>
+        }
+      </article>
+    }
+  </div>
+  @if (plan().calendar_changes.length) {
+    <footer class="plan__footer">
+      <span class="calendar-icon" aria-hidden="true">□</span>
+      <strong
+        >{{ plan().calendar_changes.length }} calendar adjustment{{
+          plan().calendar_changes.length === 1 ? '' : 's'
+        }}</strong
+      >
+      <span>keeps critical work commitments protected</span>
+    </footer>
+  }
+</section>

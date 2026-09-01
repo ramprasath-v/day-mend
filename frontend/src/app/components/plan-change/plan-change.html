@@ -1,0 +1,35 @@
+@if (priorPlan() && affected().length) {
+  <section class="card change" aria-labelledby="plan-change-title">
+    <div class="change__icon" aria-hidden="true">↻</div>
+    <div class="change__content">
+      <p class="eyebrow">Plan updated</p>
+      <h2 id="plan-change-title">Grandma is no longer available</h2>
+      <p>
+        DayMend preserved the parts of your day that still worked and replanned only the affected
+        coverage.
+      </p>
+      <div class="change__grid">
+        <div>
+          <span class="label label--affected">Affected</span>
+          @for (segment of affected(); track segment.segment_id) {
+            <div class="segment segment--affected">
+              <strong
+                >{{ segment.window.start | date: 'h:mm' }}–{{
+                  segment.window.end | date: 'h:mm a'
+                }}</strong
+              >
+              <span>{{ friendlyPerson(segment.assigned_person_id) }}</span>
+              <em>Unavailable</em>
+            </div>
+          }
+        </div>
+        <div>
+          <span class="label label--preserved">Preserved</span>
+          <div class="preserved-count">
+            <strong>{{ preserved().length }}</strong> Plan A segments still worked
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+}

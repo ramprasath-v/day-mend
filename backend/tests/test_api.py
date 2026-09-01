@@ -138,6 +138,8 @@ def test_create_returns_201_id_and_persists(
     assert body["recovery_case_id"] == "case-api-offline"
     assert body["status"] == "WAITING_FOR_RESPONSE"
     assert body["version"] == 1
+    assert body["automatic_spend_limit"] == "30"
+    assert body["currency"] == "USD"
     assert repository.get("case-api-offline").case_id == body["recovery_case_id"]
 
 
@@ -175,6 +177,8 @@ def test_caregiver_decline_replans_same_persisted_case(client: TestClient) -> No
     assert body["status"] == "APPROVAL_REQUIRED"
     assert body["active_plan"]["plan_id"] == "plan-b-approval"
     assert body["plan_history"][0]["plan_id"] == "plan-a"
+    assert body["previous_plans"][0]["plan_id"] == "plan-a"
+    assert len(body["previous_plans"][0]["coverage_segments"]) == 5
     assert body["latest_trigger"] == "event:event-api-offline"
     assert len(body["invalidated_assumptions"]) == 1
     assert body["pending_approval"]["status"] == "PENDING"

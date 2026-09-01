@@ -163,6 +163,7 @@ class RecoveryCaseResponse(ApiModel):
     original_disruption: DisruptionResponse
     active_plan: RecoveryPlanResponse | None
     plan_history: list[RecoveryPlanSummaryResponse]
+    previous_plans: list[RecoveryPlanResponse]
     events: list[RecoveryEventResponse]
     invalidated_assumptions: list[AssumptionResponse]
     pending_approval: ApprovalResponse | None
@@ -170,6 +171,8 @@ class RecoveryCaseResponse(ApiModel):
     execution_actions: list[ExecutionActionResponse]
     current_deterministic_cost: Decimal
     requires_approval: bool
+    automatic_spend_limit: Decimal | None
+    currency: str | None
     latest_trigger: str | None
     timestamps: RecoveryTimestampsResponse
     version: int

@@ -1,0 +1,32 @@
+@if (recovery().status === 'RESOLVED') {
+  <section class="resolved" aria-labelledby="resolved-title">
+    <div class="resolved__check" aria-hidden="true">✓</div>
+    <div>
+      <p>Verified recovery</p>
+      <h2 id="resolved-title">Your day is covered through 4:00 PM</h2>
+    </div>
+    <dl>
+      <div>
+        <dt>Approved cost</dt>
+        <dd>
+          {{
+            money(recovery().current_deterministic_cost)
+              | currency: recovery().currency ?? 'USD' : 'symbol' : '1.0-0'
+          }}
+        </dd>
+      </div>
+      <div>
+        <dt>Calendar adjustments</dt>
+        <dd>{{ calendarCount() }}</dd>
+      </div>
+      <div>
+        <dt>Backup coverage</dt>
+        <dd>Confirmed</dd>
+      </div>
+      <div>
+        <dt>Final verification</dt>
+        <dd>Passed</dd>
+      </div>
+    </dl>
+  </section>
+}

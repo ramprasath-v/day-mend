@@ -1,0 +1,63 @@
+:host {
+  display: block;
+}
+.resolved {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1rem;
+  padding: 1.7rem;
+  border-radius: 24px;
+  background: var(--green);
+  color: #fff;
+  box-shadow: 0 18px 45px rgba(35, 82, 59, 0.18);
+}
+.resolved__check {
+  width: 2.8rem;
+  height: 2.8rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 1.25rem;
+}
+.resolved p {
+  margin: 0 0 0.25rem;
+  color: #c7dfce;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.resolved h2 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.6rem;
+  font-weight: 600;
+}
+.resolved dl {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.6rem;
+  margin: 0.5rem 0 0;
+}
+.resolved dl div {
+  padding: 0.8rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.09);
+}
+.resolved dt {
+  color: #c7dfce;
+  font-size: 0.66rem;
+}
+.resolved dd {
+  margin: 0.2rem 0 0;
+  font-weight: 750;
+  font-size: 0.82rem;
+}
+@media (max-width: 650px) {
+  .resolved dl {
+    grid-template-columns: 1fr 1fr;
+  }
+}

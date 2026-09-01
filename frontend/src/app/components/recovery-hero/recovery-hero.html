@@ -1,0 +1,26 @@
+<section class="hero" [attr.data-tone]="status().tone" aria-labelledby="recovery-title">
+  <div class="hero__signal" aria-hidden="true">
+    @if (status().tone === 'success') {
+      <span>✓</span>
+    } @else {
+      <span></span>
+    }
+  </div>
+  <div>
+    <p class="eyebrow">{{ status().eyebrow }}</p>
+    <h1 id="recovery-title">{{ status().title }}</h1>
+    <p class="hero__description">{{ status().description }}</p>
+    @if (loadingMessage()) {
+      <p class="hero__loading" aria-live="polite">
+        <span class="spinner" aria-hidden="true"></span>{{ loadingMessage() }}
+      </p>
+    }
+  </div>
+  @if (recovery()) {
+    <div class="hero__case">
+      <span>Recovery case</span>
+      <strong>{{ recovery()!.recovery_case_id.slice(0, 8) }}</strong>
+      <small>Updated {{ recovery()!.timestamps.updated_at | date: 'h:mm a' }}</small>
+    </div>
+  }
+</section>

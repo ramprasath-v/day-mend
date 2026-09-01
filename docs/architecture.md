@@ -290,3 +290,35 @@ and finished `RESOLVED` at version 6.
 
 No Angular, provider marketplace, external calendar/messaging, authentication, AgentCore,
 CloudWatch, or additional agent was added.
+
+## Milestone 5 implementation
+
+The Angular 20 frontend remains outside the workflow engine:
+
+```text
+Standalone UI components
+        ↓ user intent
+RecoveryStore (signals)
+        ↓ typed command
+RecoveryApiService (HttpClient)
+        ↓ HTTP
+FastAPI → RecoveryApplicationService → deterministic services / Strands / repository
+        ↓ complete RecoveryCase response
+Presentational components
+```
+
+`RecoveryStore` owns the current case, case ID, loading action, and safe error copy. It does not
+decide feasibility, approval requirements, invalidation, cost, execution success, or completion.
+The typed API service is the only place that constructs endpoint URLs. Angular development uses
+`http://localhost:8000`; production defaults to same-origin configuration.
+
+The screen is composed from status hero, subtle demo controls, meaningful recovery timeline,
+coverage plan, Plan A change explanation, approval card, execution progress, and resolved summary.
+Friendly identity labels and status copy are presentation mappings. Plan-change visualization is
+derived from the backend's persisted previous plan and invalidated assumptions. Approval amounts,
+automatic-spend limit, execution actions, and final status are backend authoritative.
+
+Milestone 5 adds two safe API fields from existing state: full previous-plan views for the change
+visualization and the persisted family policy limit/currency for the approval explanation. It does
+not change any Milestone 1–4 business rule. No chat, NgRx, UI framework, provider marketplace,
+real external integration, authentication, deployment, or additional agent was added.

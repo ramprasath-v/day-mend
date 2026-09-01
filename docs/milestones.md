@@ -68,6 +68,13 @@ external events and approval decisions, advance the actual workflow, and pass AP
 **Goal:** Show the disruption, recovery progress, plan changes, approval decision, and resolved
 outcome without a chatbot UI.
 
+**Status:** Complete. Angular 20 standalone components, a typed API service, and a signal-based
+store render the normal day, backend-driven recovery states, meaningful event timeline, friendly
+coverage plan, Plan A invalidation/preservation, Plan B, approval boundary, execution results,
+and verified completion. Nine Chrome unit tests and the production build pass. A live browser
+flow reached Nova Pro, DynamoDB, approval, two successful simulated actions, and `RESOLVED` on
+case `d8c9ebdb-b1ac-423b-b6e3-67e20eb8fc92` at version 6.
+
 **Exit criterion:** A parent can follow and act on the primary demo scenario end to end in a
 workflow/status interface that accurately reflects backend state.
 

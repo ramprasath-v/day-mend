@@ -1,0 +1,15 @@
+@if (recovery().execution_actions.length || recovery().status === 'EXECUTING') {
+  <section class="card execution" aria-labelledby="execution-title">
+    <p class="eyebrow">Recovery actions</p>
+    <h2 id="execution-title">Putting the plan in place</h2>
+    <div class="execution__steps">
+      @for (group of groups(); track group.label) {
+        <div [class.complete]="completed(group)">
+          <span aria-hidden="true">{{ completed(group) ? '✓' : '·' }}</span>
+          <strong>{{ group.label }}</strong>
+          <small>{{ group.description }}</small>
+        </div>
+      }
+    </div>
+  </section>
+}

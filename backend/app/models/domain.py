@@ -301,6 +301,7 @@ class RecoveryCase(ContractModel):
     coverage_gap: CoverageWindow
     uncovered_windows: list[CoverageWindow] = Field(default_factory=list)
     context_state: dict[str, Any] = Field(default_factory=dict)
+    family_policy: FamilyPolicy | None = None
     active_recovery_plan: RecoveryPlan | None = None
     previous_plans: list[RecoveryPlan] = Field(default_factory=list)
     assumptions: list[PlanAssumption] = Field(default_factory=list)

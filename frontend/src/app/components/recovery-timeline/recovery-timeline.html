@@ -1,0 +1,23 @@
+<section class="card timeline" aria-labelledby="timeline-title">
+  <header>
+    <p class="eyebrow">Recovery timeline</p>
+    <h2 id="timeline-title">What DayMend has done</h2>
+  </header>
+  <ol>
+    @for (item of items(); track item.id; let last = $last) {
+      <li [attr.data-state]="item.state">
+        <div class="timeline__rail" aria-hidden="true">
+          <span></span>
+          @if (!last) {
+            <i></i>
+          }
+        </div>
+        <time>{{ item.time | date: 'h:mm a' }}</time>
+        <div>
+          <strong>{{ item.title }}</strong>
+          <p>{{ item.detail }}</p>
+        </div>
+      </li>
+    }
+  </ol>
+</section>

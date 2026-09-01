@@ -227,6 +227,7 @@ class RecoveryApplicationService:
                         "message": command.message,
                     }
                 },
+                "family_policy": scenario.policy,
             }
         )
         return self.repository.save(recovery_case)

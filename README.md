@@ -69,6 +69,13 @@ contain no recovery policy or persistence logic. The offline HTTP lifecycle reac
 through the real deterministic services, and a live Nova Pro + DynamoDB API smoke resolved the
 same case after Plan B approval.
 
+**Milestone 5 — COMPLETE.** The Angular 20 recovery experience turns the API lifecycle into a
+polished status screen rather than a chatbot. Parents can trigger the synthetic disruption, watch
+Plan A appear, submit Grandma's real decline event, see the invalidated and preserved Plan A
+segments, review Plan B against the automatic-spend boundary, approve or reject, and see
+backend-derived execution plus deterministic `RESOLVED` completion. A live browser smoke used
+Nova Pro and DynamoDB end to end.
+
 These are deliberately separate mechanisms:
 
 - **Initial-plan repair:** a draft was never valid; world state is unchanged; validator findings
@@ -113,6 +120,10 @@ boundary; Milestone 3 deterministically pauses and resumes execution around it.
 │   │   └── tools
 │   ├── tests
 │   └── pyproject.toml
+├── frontend
+│   ├── src/app
+│   ├── angular.json
+│   └── package.json
 └── docs
     ├── architecture.md
     ├── demo-flow.md
@@ -240,6 +251,37 @@ DAYMEND_BEDROCK_MODEL_ID=amazon.nova-pro-v1:0 \
 DAYMEND_RECOVERY_REPOSITORY=dynamodb \
 DAYMEND_RECOVERY_TABLE=daymend-recovery-cases-dev \
 .venv/bin/python -m tests.live_api_smoke
+```
+
+## Angular demo UI
+
+Install and run the Angular 20 frontend:
+
+```bash
+cd frontend
+npm install
+npm start
+```
+
+Development uses `http://localhost:8000` from Angular's development environment. Start the
+backend separately with CORS configured for the frontend:
+
+```bash
+cd backend
+export DAYMEND_ALLOWED_ORIGINS=http://localhost:4200,http://127.0.0.1:4200
+.venv/bin/uvicorn app.main:app --reload --port 8000
+```
+
+For the live AWS demo, add the Nova Pro, DynamoDB repository, region, and table environment
+variables shown above before starting Uvicorn. Then open `http://localhost:4200`, click
+**Simulate nanny cancellation**, **Simulate Grandma decline**, and the plan-specific approval.
+The UI never fabricates a plan or completion state; it renders each returned `RecoveryCase`.
+
+Frontend verification:
+
+```bash
+npm test -- --watch=false --browsers=ChromeHeadless
+npm run build
 ```
 
 ## Roadmap

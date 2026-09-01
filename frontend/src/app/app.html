@@ -1,0 +1,98 @@
+<div class="app-shell">
+  <header class="brand-bar">
+    <a class="brand" href="#main" aria-label="DayMend home">
+      <span class="brand__mark" aria-hidden="true"><i></i><i></i></span>
+      <strong>DayMend</strong>
+    </a>
+    <p>When childcare falls through, <span>your whole day shouldn’t.</span></p>
+    <div class="system-proof"><span></span> Recovery system online</div>
+  </header>
+
+  <main id="main">
+    <app-recovery-hero [recovery]="store.currentCase()" [loadingMessage]="store.loadingMessage()" />
+
+    @if (store.error(); as error) {
+      <div class="error-banner" role="alert">
+        <span aria-hidden="true">!</span>
+        <p>{{ error }}</p>
+        <button type="button" (click)="store.refresh()" [disabled]="store.loading()">
+          Try refresh
+        </button>
+      </div>
+    }
+
+    <app-demo-controls
+      [recovery]="store.currentCase()"
+      [busy]="store.loading()"
+      (start)="store.startRecovery()"
+      (decline)="store.submitGrandmaDecline()"
+      (refresh)="store.refresh()"
+    />
+
+    @if (store.currentCase(); as recovery) {
+      @if (recovery.invalidated_assumptions.length) {
+        <app-plan-change [recovery]="recovery" />
+      }
+      @if (recovery.pending_approval) {
+        <app-approval-card
+          [recovery]="recovery"
+          [busy]="store.loading()"
+          (approve)="store.decideApproval('APPROVE')"
+          (reject)="store.decideApproval('REJECT')"
+        />
+      }
+      <div class="content-grid">
+        <app-recovery-timeline [recovery]="recovery" />
+        @if (recovery.active_plan) {
+          <app-coverage-plan
+            [plan]="recovery.active_plan"
+            [badge]="recovery.previous_plans.length ? 'Recovery Plan B' : 'Recovery Plan A'"
+          />
+        }
+      </div>
+      <app-execution-progress [recovery]="recovery" />
+      <app-resolved-summary [recovery]="recovery" />
+    } @else {
+      <section class="before-grid" aria-label="Normal day context">
+        <article class="card normal-day">
+          <p class="eyebrow">Today · before disruption</p>
+          <h2>One continuous care window</h2>
+          <div class="normal-day__coverage">
+            <time>8:00 AM</time><span><i></i></span><strong>Nanny</strong
+            ><small>Scheduled childcare</small><time>4:00 PM</time>
+          </div>
+          <p class="normal-day__note">
+            DayMend is ready if today’s childcare plan changes unexpectedly.
+          </p>
+        </article>
+        <article class="card proof-card">
+          <p class="eyebrow">How recovery works</p>
+          <h2>Capable when needed. Quiet when not.</h2>
+          <ul>
+            <li><span>01</span> Checks today’s schedule and calendars</li>
+            <li><span>02</span> Compares known, trusted caregivers</li>
+            <li><span>03</span> Validates every minute of coverage</li>
+            <li><span>04</span> Pauses only for meaningful approval</li>
+          </ul>
+        </article>
+      </section>
+    }
+
+    <section class="agent-proof" aria-label="How DayMend makes a recovery">
+      <div>
+        <p class="eyebrow">Under the hood</p>
+        <h2>One recovery agent. Deterministic safeguards.</h2>
+      </div>
+      <ul>
+        <li><span>✓</span> Strands Recovery Agent</li>
+        <li><span>✓</span> Amazon Nova Pro</li>
+        <li><span>✓</span> Persistent recovery case</li>
+        <li><span>✓</span> Verified coverage before completion</li>
+      </ul>
+    </section>
+  </main>
+  <footer>
+    <span>DayMend</span>
+    <p>A focused childcare disruption recovery prototype.</p>
+  </footer>
+</div>

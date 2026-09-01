@@ -1,0 +1,93 @@
+:host {
+  display: block;
+}
+.change {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1rem;
+  padding: 1.5rem;
+  border-color: #e6c796;
+  background: linear-gradient(135deg, #fffdf8, #fbf1df);
+}
+.change__icon {
+  width: 2.6rem;
+  height: 2.6rem;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: #f4dfbb;
+  color: #8d5e1b;
+  font-size: 1.3rem;
+}
+.eyebrow {
+  margin: 0 0 0.25rem;
+  color: #97691e;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+h2 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.4rem;
+  font-weight: 600;
+}
+.change__content > p:not(.eyebrow) {
+  margin: 0.45rem 0 1.1rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.change__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) 1fr;
+  gap: 0.7rem;
+}
+.change__grid > div {
+  padding: 0.8rem;
+  border: 1px solid rgba(86, 72, 42, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.7);
+}
+.label {
+  display: inline-block;
+  margin-bottom: 0.55rem;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.label--affected {
+  color: var(--red);
+}
+.label--preserved {
+  color: var(--green);
+}
+.segment {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+}
+.segment span {
+  color: var(--muted);
+}
+.segment em {
+  color: var(--red);
+  font-style: normal;
+  font-weight: 700;
+}
+.preserved-count {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.preserved-count strong {
+  margin-right: 0.2rem;
+  color: var(--green);
+  font-size: 1.2rem;
+}
+@media (max-width: 600px) {
+  .change__grid {
+    grid-template-columns: 1fr;
+  }
+}

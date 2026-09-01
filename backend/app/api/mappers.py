@@ -32,36 +32,7 @@ def recovery_case_response(recovery_case: RecoveryCase) -> RecoveryCaseResponse:
         recovery_case_id=recovery_case.case_id,
         status=recovery_case.status,
         original_disruption=_original_disruption(recovery_case),
-        active_plan=(
-            RecoveryPlanResponse(
-                plan_id=active.plan_id,
-                coverage_segments=[
-                    CoverageSegmentResponse(
-                        segment_id=segment.segment_id,
-                        window=_window(segment.window),
-                        assigned_person_id=segment.assigned_person_id,
-                        source=segment.source,
-                        estimated_cost=segment.estimated_cost,
-                    )
-                    for segment in active.coverage_segments
-                ],
-                calendar_changes=[
-                    CalendarChangeResponse(
-                        event_id=event.event_id,
-                        owner_id=event.owner_id,
-                        title=event.title,
-                        window=_window(event.window),
-                        location=event.location,
-                    )
-                    for event in active.calendar_changes
-                ],
-                estimated_cost=active.estimated_cost,
-                validation_state=active.validation_state,
-                validation_errors=active.validation_errors,
-            )
-            if active is not None
-            else None
-        ),
+        active_plan=_plan(active) if active is not None else None,
         plan_history=[
             RecoveryPlanSummaryResponse(
                 plan_id=plan.plan_id,
@@ -71,6 +42,7 @@ def recovery_case_response(recovery_case: RecoveryCase) -> RecoveryCaseResponse:
             )
             for plan in recovery_case.previous_plans
         ],
+        previous_plans=[_plan(plan) for plan in recovery_case.previous_plans],
         events=[
             RecoveryEventResponse(
                 event_id=event.event_id,
@@ -116,6 +88,16 @@ def recovery_case_response(recovery_case: RecoveryCase) -> RecoveryCaseResponse:
         ],
         current_deterministic_cost=active.estimated_cost if active is not None else 0,
         requires_approval=requires_approval,
+        automatic_spend_limit=(
+            recovery_case.family_policy.automatic_spend_limit
+            if recovery_case.family_policy is not None
+            else None
+        ),
+        currency=(
+            recovery_case.family_policy.currency
+            if recovery_case.family_policy is not None
+            else None
+        ),
         latest_trigger=recovery_case.latest_replan_trigger_event_id,
         timestamps=RecoveryTimestampsResponse(
             created_at=recovery_case.created_at,
@@ -154,3 +136,32 @@ def _datetime(value: Any, fallback: datetime) -> datetime:
 
 def _window(window) -> CoverageWindowResponse:
     return CoverageWindowResponse(start=window.start, end=window.end)
+
+
+def _plan(plan) -> RecoveryPlanResponse:
+    return RecoveryPlanResponse(
+        plan_id=plan.plan_id,
+        coverage_segments=[
+            CoverageSegmentResponse(
+                segment_id=segment.segment_id,
+                window=_window(segment.window),
+                assigned_person_id=segment.assigned_person_id,
+                source=segment.source,
+                estimated_cost=segment.estimated_cost,
+            )
+            for segment in plan.coverage_segments
+        ],
+        calendar_changes=[
+            CalendarChangeResponse(
+                event_id=event.event_id,
+                owner_id=event.owner_id,
+                title=event.title,
+                window=_window(event.window),
+                location=event.location,
+            )
+            for event in plan.calendar_changes
+        ],
+        estimated_cost=plan.estimated_cost,
+        validation_state=plan.validation_state,
+        validation_errors=plan.validation_errors,
+    )

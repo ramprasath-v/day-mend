@@ -109,3 +109,24 @@ and completion reached `RESOLVED` at version 6.
 FastAPI does not decide plans, validity, approval requirements, or completion. There is no UI,
 authentication, paid-provider search, real calendar/messaging integration, or deployment work in
 this milestone.
+
+## Milestone 5 boundary
+
+The primary story is now visible in one Angular recovery screen. Before disruption, it shows the
+normal 8:00 AM–4:00 PM nanny window. The demo control sends the real create request and displays a
+loading explanation while Nova plans. Plan A renders as friendly coverage rows rather than entity
+IDs. The Grandma control sends the real `CAREGIVER_DECLINED` event; Angular changes no recovery
+state itself.
+
+After replanning, the UI uses the persisted previous plan and invalidated assumptions to mark
+Grandma's broken window and count Plan A segments that remained valid. The approval card uses the
+backend's pending request, deterministic cost, and persisted `$30` policy limit. Approve/reject
+commands include the current optimistic version. Only returned execution actions and completion
+state can produce completed progress and the final “Day recovered” view.
+
+The live browser smoke resolved case `d8c9ebdb-b1ac-423b-b6e3-67e20eb8fc92`. Nova created Plan A,
+Grandma's decline invalidated one assumption, and Nova produced `plan_B_v2`. That fresh model run
+selected a valid `$48` employer-backup plan rather than the offline `$92` mixed-care example. The
+plan still crossed the `$30` autonomy limit, so the UI presented one real approval. Approval
+resumed the same case, both required actions succeeded, deterministic completion passed, and the
+UI rendered `RESOLVED` at version 6. Model variability is reported rather than hidden or overridden.
