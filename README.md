@@ -49,11 +49,18 @@ repaired two rejected drafts, and reached `valid=true` on attempt 3. The final p
 deterministically, and correctly reported `requires_approval=true` against the `$30` automatic
 spend threshold. All offline tests and quality checks pass.
 
-**Milestone 2 — IMPLEMENTED; LIVE VERIFICATION PENDING.** A typed caregiver-decline event now
-updates request-local authoritative world state, invalidates only matching plan assumptions,
-calculates impacted and preserved segments plus newly uncovered windows, and sends that state to
-the same Recovery Agent. Plan B uses the existing three-attempt deterministic validation-repair
-mechanism. A successful Plan B becomes active while valid Plan A remains in in-memory history.
+**Milestone 2 — COMPLETE.** A typed caregiver-decline event updates request-local authoritative
+world state, invalidates only matching plan assumptions, calculates impacted and preserved
+segments plus newly uncovered windows, and sends that state to the same Recovery Agent. A real
+Nova Pro smoke produced a deterministically valid Plan B while retaining valid Plan A in history.
+
+**Milestone 3 — COMPLETE.** Complete `RecoveryCase`
+aggregates now round-trip through in-memory or DynamoDB repositories. Deterministic policy pauses
+a valid `$92` plan at `APPROVAL_REQUIRED` because it exceeds the `$30` autonomy limit. A later
+approve/reject command reloads and resumes the same versioned case. Approved simulated actions
+execute exactly once, and only the deterministic completion verifier can set `RESOLVED`. A real
+`daymend-recovery-cases-dev` DynamoDB smoke persisted and reloaded the same case through approval,
+four successful actions, completion verification, and final `RESOLVED` state at version 4.
 
 These are deliberately separate mechanisms:
 
@@ -62,8 +69,8 @@ These are deliberately separate mechanisms:
 - **World-state replanning:** Plan A was valid; a recorded external event changes authoritative
   facts; deterministic impact analysis begins a new Plan B planning cycle.
 
-Neither milestone executes plan actions. Approval interaction, persistence, APIs, integrations,
-and frontend work remain future milestones.
+Milestone 3 uses simulated explicit actions only; there is no real booking, payment, calendar, or
+messaging integration. APIs and frontend work remain future milestones.
 
 ## Preferences, policy, and trust
 
@@ -78,8 +85,8 @@ caregiver; policy does not duplicate a caregiver allowlist.
 
 The automatic-spend limit determines whether a valid proposal would require approval before
 execution. It is not a planning budget: exceeding it does not make an otherwise feasible plan
-invalid, and coverage must never be sacrificed to avoid approval. Milestone 1 reports that
-boundary but does not implement approval or execute the plan.
+invalid, and coverage must never be sacrificed to avoid approval. Milestone 1 reports the
+boundary; Milestone 3 deterministically pauses and resumes execution around it.
 
 ## Repository structure
 
@@ -137,6 +144,35 @@ Run the live Milestone 2 Plan A → caregiver decline → Plan B smoke:
 DAYMEND_BEDROCK_MODEL_ID=amazon.nova-pro-v1:0 \
 uv run python -m app.agent.replanning_demo
 ```
+
+For DynamoDB-backed Milestone 3 development, configure the table and create it if absent:
+
+```bash
+export DAYMEND_RECOVERY_TABLE=daymend-recovery-cases-dev
+uv run python -m app.repositories.dynamodb_setup
+```
+
+The table uses `recovery_case_id` as its string partition key and on-demand billing. Each case is
+one versioned item whose `payload` is the complete Pydantic JSON aggregate; no secrets or model
+reasoning are stored. Run the live persistence/approval/resume smoke with:
+
+```bash
+DAYMEND_RECOVERY_TABLE=daymend-recovery-cases-dev \
+uv run python -m tests.live_dynamodb_approval_smoke
+```
+
+That harness uses the deterministically validated Milestone 2 test aggregate and proves the real
+DynamoDB/service lifecycle, not fresh model behavior. To combine fresh Nova Pro planning with the
+same DynamoDB lifecycle, run:
+
+```bash
+DAYMEND_BEDROCK_MODEL_ID=amazon.nova-pro-v1:0 \
+DAYMEND_RECOVERY_TABLE=daymend-recovery-cases-dev \
+uv run python -m app.agent.approval_demo
+```
+
+The combined command preserves the strict three-attempt planning cap and may stop before
+persistence if a fresh model session does not produce a valid Plan A or Plan B.
 
 The smoke output contains the configured model ID, tools used, proposal and validation summaries
 for each attempt, and the final safety/cost/autonomy result. It does not expose model

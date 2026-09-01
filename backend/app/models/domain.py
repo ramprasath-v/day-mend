@@ -36,6 +36,14 @@ class RecoveryEventType(StrEnum):
 
     DISRUPTION_DETECTED = "DISRUPTION_DETECTED"
     CAREGIVER_DECLINED = "CAREGIVER_DECLINED"
+    APPROVAL_REQUESTED = "APPROVAL_REQUESTED"
+    APPROVAL_APPROVED = "APPROVAL_APPROVED"
+    APPROVAL_REJECTED = "APPROVAL_REJECTED"
+    EXECUTION_STARTED = "EXECUTION_STARTED"
+    ACTION_COMPLETED = "ACTION_COMPLETED"
+    ACTION_FAILED = "ACTION_FAILED"
+    COMPLETION_VERIFIED = "COMPLETION_VERIFIED"
+    CASE_RESOLVED = "CASE_RESOLVED"
 
 
 class PlanAssumptionStatus(StrEnum):
@@ -59,6 +67,27 @@ class ApprovalStatus(StrEnum):
     PENDING = "PENDING"
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
+
+
+class ApprovalType(StrEnum):
+    """Consequential action categories that may cross an autonomy boundary."""
+
+    SPEND_ABOVE_AUTONOMY_LIMIT = "SPEND_ABOVE_AUTONOMY_LIMIT"
+
+
+class ExecutionActionType(StrEnum):
+    """Small set of simulated recovery operations used before real integrations exist."""
+
+    RESERVE_CAREGIVER = "RESERVE_CAREGIVER"
+    UPDATE_CALENDAR = "UPDATE_CALENDAR"
+
+
+class ExecutionActionStatus(StrEnum):
+    """Deterministic execution outcome for one planned operation."""
+
+    PENDING = "PENDING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
 
 
 class CoverageWindow(ContractModel):
@@ -196,7 +225,12 @@ class ApprovalRequest(ContractModel):
     """A meaningful decision that must be made by the parent."""
 
     approval_id: str
+    recovery_case_id: str
+    approval_type: ApprovalType
+    plan_id: str
     reason: str
+    summary: str
+    consequence: str
     requested_at: AwareDatetime
     status: ApprovalStatus = ApprovalStatus.PENDING
     amount: Decimal | None = Field(default=None, ge=0)
@@ -209,6 +243,30 @@ class ApprovalRequest(ContractModel):
             raise ValueError("pending approval requests cannot have decided_at")
         if self.status is not ApprovalStatus.PENDING and self.decided_at is None:
             raise ValueError("decided approval requests require decided_at")
+        return self
+
+
+class ExecutionAction(ContractModel):
+    """One explicit simulated side effect and its auditable result."""
+
+    action_id: str
+    action_type: ExecutionActionType
+    target_id: str
+    plan_id: str
+    status: ExecutionActionStatus = ExecutionActionStatus.PENDING
+    attempted_at: AwareDatetime
+    completed_at: AwareDatetime | None = None
+    result: str | None = None
+    error: str | None = None
+
+    @model_validator(mode="after")
+    def completion_fields_match_status(self) -> "ExecutionAction":
+        if self.status is ExecutionActionStatus.PENDING and self.completed_at is not None:
+            raise ValueError("pending execution actions cannot have completed_at")
+        if self.status is not ExecutionActionStatus.PENDING and self.completed_at is None:
+            raise ValueError("completed execution actions require completed_at")
+        if self.status is ExecutionActionStatus.FAILED and not self.error:
+            raise ValueError("failed execution actions require an error")
         return self
 
 
@@ -248,7 +306,11 @@ class RecoveryCase(ContractModel):
     assumptions: list[PlanAssumption] = Field(default_factory=list)
     events: list[RecoveryEvent] = Field(default_factory=list)
     pending_approval: ApprovalRequest | None = None
+    approval_history: list[ApprovalRequest] = Field(default_factory=list)
+    execution_history: list[ExecutionAction] = Field(default_factory=list)
     latest_replan_trigger_event_id: str | None = None
+    completion_verified_at: AwareDatetime | None = None
+    version: int = Field(default=0, ge=0)
     created_at: AwareDatetime
     updated_at: AwareDatetime
 

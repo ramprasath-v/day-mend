@@ -193,3 +193,59 @@ same planning cycle                 new Plan B planning cycle
 
 No persistence, approval interaction, external messaging/provider integration, API, UI, or
 multi-agent behavior is included.
+
+## Milestone 3 implementation
+
+Milestone 3 separates five decisions that must not be conflated:
+
+1. `PlanValidator` determines feasibility and authoritative cost.
+2. `ApprovalService.apply_autonomy_gate` compares that cost to hard `FamilyPolicy`; the LLM never
+   decides whether approval is mandatory.
+3. A human approve/reject command finalizes the current-plan `ApprovalRequest` idempotently.
+4. `RecoveryExecutionService` runs explicit simulated calendar/caregiver actions once.
+5. `CompletionVerifier` independently revalidates coverage, authorization, action success,
+   dependencies, and internal consistency; it is the only path to `RESOLVED`.
+
+`RecoveryCaseRepository` is the business-logic boundary. `InMemoryRecoveryCaseRepository` stores
+deep copies for tests. `DynamoDBRecoveryCaseRepository` stores a complete case as one JSON payload
+under the `recovery_case_id` partition key, alongside status, update time, and an optimistic
+integer version. Conditional writes reject stale updates. Pydantic JSON preserves aware
+datetimes, enums, nested plans/events/assumptions/actions, and Decimal costs without a parallel
+serialization format.
+
+When a valid plan exceeds `automatic_spend_limit`, a deterministic request records exact cost,
+currency, plan ID, summary, and consequence; the case becomes `APPROVAL_REQUIRED` and is persisted
+without execution. Approval reloads that same case and returns it to `EXECUTING`. Duplicate
+decisions and executions are idempotent; opposite decisions and stale plan approvals fail.
+Rejection records `APPROVAL_REJECTED`, performs no action, and moves the same case to `REPLANNING`
+with the rejection event as its latest trigger.
+
+Simulated actions are stable derivations of Plan B: one for each calendar change and caregiver
+reservation. Any failure prevents completion. Successful actions still leave the case in
+`EXECUTING` until deterministic verification confirms valid full coverage, no pending mandatory
+approval, approved consequential spend, every required action succeeded, and no active reliance
+on an invalidated assumption.
+
+```text
+DISRUPTION → INITIAL PLAN → VALIDATE/REPAIR → VALID PLAN A
+    → WORLD CHANGE → INVALIDATE → REPLAN → VALID PLAN B
+    → AUTONOMY CHECK → APPROVAL_REQUIRED → PERSIST
+    → HUMAN APPROVES → RELOAD SAME CASE → EXECUTE → VERIFY → RESOLVED
+```
+
+No FastAPI, UI, real booking/payment/calendar/messaging, provider search, CloudWatch, AgentCore,
+or additional agent is included.
+
+### Verified Milestone 3 live boundary
+
+The real DynamoDB harness used `daymend-recovery-cases-dev`. It persisted a valid `$92` Plan B at
+`APPROVAL_REQUIRED`, discarded the loaded object, reloaded the same case ID, applied `APPROVED`,
+ran four simulated actions, deterministically verified completion, and reloaded `RESOLVED` at
+version 4. Valid Plan A history, Grandma's decline, one invalidated assumption, approved request,
+and all four execution results survived.
+
+This live storage/workflow harness reuses the deterministic Milestone 2 aggregate fixture;
+Milestone 2 already separately proved live Nova Pro replanning. Fresh combined agent runs remain
+subject to bounded model variability: recent attempts correctly stopped before persistence when
+Nova did not produce a valid Plan A within three attempts. No validator or retry limit was
+weakened to force the demo forward.

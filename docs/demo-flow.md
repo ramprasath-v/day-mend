@@ -63,5 +63,29 @@ This differs from Milestone 1 repair: Plan A was already valid, and replanning s
 the event changes authoritative world state. Any invalid Plan B draft is then corrected by the
 inner Milestone 1-style validation loop without applying another external event.
 
-Steps 10–16 remain future milestones. Milestone 2 may report `requires_approval`, but it does not
-request approval, execute actions, persist state, or mark the case `RESOLVED`.
+Milestone 2 stops before steps 10–16. It may report `requires_approval`, but its own orchestration
+does not request approval, execute actions, persist state, or mark the case `RESOLVED`.
+
+## Milestone 3 boundary
+
+Milestone 3 covers steps 10–16 with persistence and simulated integrations. A valid Plan B is
+still feasible when its deterministic `$92` cost exceeds the `$30` automatic-spend threshold;
+the autonomy gate creates a plan-specific pending request, sets `APPROVAL_REQUIRED`, and persists
+the whole case. A new service instance reloads it, applies the human decision to the same case ID,
+and resumes without asking for context again.
+
+Approval permits explicit simulated calendar updates and caregiver reservations. It does not
+itself mean execution succeeded. After all actions return success, `CompletionVerifier`
+revalidates the active plan against current world state, checks approval/action/dependency
+history, and only then persists `RESOLVED`. A final reload proves Plan A, Plan B, Grandma's
+decline, invalidated assumption, approval, execution, and completion history survived.
+
+Rejecting the current request records a new external decision fact, executes nothing, and moves
+the same case to `REPLANNING`; offline tests cover this path. Real provider integrations and the
+rejection-driven alternative-plan live demo remain later work.
+
+The verified live Milestone 3 harness used `daymend-recovery-cases-dev` and a unique case ID. It
+reloaded `APPROVAL_REQUIRED`, approved the exact active Plan B, completed four simulated actions,
+verified completion, and reloaded the same case as `RESOLVED` at version 4. The harness reuses the
+tested Milestone 2 aggregate so that storage/approval evidence is independent from fresh model
+variance; the separate Milestone 2 smoke remains the real agent/replanning proof.

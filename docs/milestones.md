@@ -23,10 +23,10 @@ not include Milestone 2 invalidation or replanning after an external event.
 **Goal:** A caregiver decline invalidates the relevant assumption, recomputes the uncovered
 segment, and causes the agent to replan from updated world state.
 
-**Status:** Implemented offline; live Nova Pro verification pending. The event, authoritative
-availability update, targeted assumption invalidation, localized impact analysis, Plan A
-history, same-agent Plan B generation, and bounded Plan B validation repair are covered by
-deterministic and narrow orchestration tests.
+**Status:** Complete. The event, authoritative availability update, targeted assumption
+invalidation, localized impact analysis, Plan A history, same-agent Plan B generation, and
+bounded Plan B validation repair are covered by deterministic tests and a real Nova Pro Plan A →
+Grandma decline → valid Plan B smoke.
 
 **Exit criterion:** A recorded external decline updates the case without a hardcoded branch,
 preserves still-valid plan portions, and produces a newly validated plan for the remaining gap.
@@ -38,6 +38,12 @@ indicates that a valid replacement plan is ready for later execution work; it is
 
 **Goal:** Persist `RecoveryCase` state, apply family policy thresholds, pause for approval, and
 resume the same case after an approve or reject decision.
+
+**Status:** Complete. The versioned repository
+boundary, single-item DynamoDB adapter, exact serialization, deterministic autonomy gate,
+idempotent decisions/execution, rejection transition, and completion verifier are covered by the
+full test suite. A real DynamoDB smoke persisted, reloaded, approved, executed, verified, and
+reloaded the same `$92` case as `RESOLVED` with all histories intact.
 
 **Exit criterion:** A case survives process restart, an over-threshold action cannot execute
 without approval, and both approval outcomes resume the same case with an auditable event trail.

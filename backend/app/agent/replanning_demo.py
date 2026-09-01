@@ -2,18 +2,20 @@
 
 import json
 import sys
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.agent.config import RecoveryAgentConfig
 from app.agent.recovery_agent import (
+    InitialPlanningResult,
     ToolInvocationRecorder,
     build_recovery_agent,
     run_initial_planning_session,
 )
-from app.agent.replanning import process_external_event
-from app.fixtures import get_demo_scenario
+from app.agent.replanning import ReplanningResult, process_external_event
+from app.fixtures import DemoScenario, get_demo_scenario
 from app.models import CoverageWindow, RecoveryEvent, RecoveryEventType
 from app.services import create_active_recovery_case
 
@@ -24,82 +26,76 @@ def _json_default(value: Any) -> str:
     return str(value)
 
 
+def run_live_replanning(
+    config: RecoveryAgentConfig,
+    *,
+    case_id: str = "demo-recovery-case",
+    progress: Callable[[str], None] | None = None,
+) -> tuple[DemoScenario, InitialPlanningResult, ReplanningResult]:
+    """Run and return the real same-agent Milestone 2 workflow without printing it."""
+
+    scenario = get_demo_scenario()
+    recorder = ToolInvocationRecorder()
+    agent = build_recovery_agent(config, recorder)
+    initial = run_initial_planning_session(
+        agent=agent,
+        recorder=recorder,
+        disruption=scenario.disruption,
+        scenario=scenario,
+        model_id=config.model_id,
+    )
+    if not initial.success or initial.final_plan is None:
+        raise RuntimeError("Live initial planning did not produce a valid Plan A")
+    if progress is not None:
+        progress(f"initial_plan_valid attempts={initial.total_attempts}")
+    grandma_segments = [
+        segment
+        for segment in initial.final_plan.coverage_segments
+        if segment.assigned_person_id == "grandma"
+    ]
+    if not grandma_segments:
+        raise RuntimeError("Live valid Plan A did not depend on Grandma")
+    affected_window = CoverageWindow(
+        start=min(segment.window.start for segment in grandma_segments),
+        end=max(segment.window.end for segment in grandma_segments),
+    )
+    case = create_active_recovery_case(
+        case_id=case_id,
+        disruption=scenario.disruption,
+        validated_plan=initial.final_plan,
+        required_coverage=scenario.required_coverage,
+        now=datetime(2026, 8, 27, 7, 10, tzinfo=PACIFIC),
+    )
+    event = RecoveryEvent(
+        event_id=f"{case_id}:grandma-declined",
+        event_type=RecoveryEventType.CAREGIVER_DECLINED,
+        caregiver_id="grandma",
+        relevant_window=affected_window,
+        occurred_at=datetime(2026, 8, 27, 9, 5, tzinfo=PACIFIC),
+        message="Sorry, I can't help today.",
+    )
+    if progress is not None:
+        progress("caregiver_decline_received")
+    replan = process_external_event(
+        recovery_case=case,
+        event=event,
+        scenario=scenario,
+        agent=agent,
+        recorder=recorder,
+    )
+    if not replan.success:
+        raise RuntimeError("Live replanning did not produce a valid Plan B")
+    if progress is not None:
+        progress(f"replan_valid attempts={replan.total_attempts}")
+    return scenario, initial, replan
+
+
 def main() -> int:
     """Run the real same-agent Plan A → decline → Plan B workflow."""
 
-    scenario = get_demo_scenario()
     config = RecoveryAgentConfig.from_environment()
-    recorder = ToolInvocationRecorder()
-    agent = build_recovery_agent(config, recorder)
     try:
-        initial = run_initial_planning_session(
-            agent=agent,
-            recorder=recorder,
-            disruption=scenario.disruption,
-            scenario=scenario,
-            model_id=config.model_id,
-        )
-        if not initial.success or initial.final_plan is None:
-            print(
-                json.dumps(
-                    {
-                        "model_id": config.model_id,
-                        "success": False,
-                        "stage": "initial_planning",
-                        "initial_result": initial.model_dump(mode="json"),
-                    },
-                    indent=2,
-                    default=_json_default,
-                )
-            )
-            return 2
-
-        grandma_segments = [
-            segment
-            for segment in initial.final_plan.coverage_segments
-            if segment.assigned_person_id == "grandma"
-        ]
-        if not grandma_segments:
-            print(
-                json.dumps(
-                    {
-                        "model_id": config.model_id,
-                        "success": False,
-                        "stage": "demo_precondition",
-                        "message": "Live valid Plan A did not depend on Grandma.",
-                        "plan_a": initial.final_plan.model_dump(mode="json"),
-                    },
-                    indent=2,
-                )
-            )
-            return 3
-
-        affected_window = CoverageWindow(
-            start=min(segment.window.start for segment in grandma_segments),
-            end=max(segment.window.end for segment in grandma_segments),
-        )
-        case = create_active_recovery_case(
-            case_id="demo-recovery-case",
-            disruption=scenario.disruption,
-            validated_plan=initial.final_plan,
-            required_coverage=scenario.required_coverage,
-            now=datetime(2026, 8, 27, 7, 10, tzinfo=PACIFIC),
-        )
-        event = RecoveryEvent(
-            event_id="demo-grandma-declined",
-            event_type=RecoveryEventType.CAREGIVER_DECLINED,
-            caregiver_id="grandma",
-            relevant_window=affected_window,
-            occurred_at=datetime(2026, 8, 27, 9, 5, tzinfo=PACIFIC),
-            message="Sorry, I can't help today.",
-        )
-        replan = process_external_event(
-            recovery_case=case,
-            event=event,
-            scenario=scenario,
-            agent=agent,
-            recorder=recorder,
-        )
+        _, initial, replan = run_live_replanning(config)
     except Exception as exc:  # noqa: BLE001 - smoke must surface provider/runtime failures.
         print(
             "IMPLEMENTED — LIVE SMOKE BLOCKED\n"

@@ -161,7 +161,7 @@ class PlanInvalidationService:
         previous_plans = recovery_case.previous_plans.copy()
         if original_plan.plan_id not in {plan.plan_id for plan in previous_plans}:
             previous_plans.append(original_plan)
-        updated_scenario = _update_caregiver_availability(scenario, event)
+        updated_scenario = apply_caregiver_decline_to_scenario(scenario, event)
         context_state = recovery_case.context_state.copy()
         context_state.update(
             {
@@ -194,10 +194,12 @@ class PlanInvalidationService:
         )
 
 
-def _update_caregiver_availability(
+def apply_caregiver_decline_to_scenario(
     scenario: DemoScenario,
     event: RecoveryEvent,
 ) -> DemoScenario:
+    """Replay a recorded caregiver decline to rebuild authoritative in-memory state."""
+
     assert event.caregiver_id is not None
     assert event.relevant_window is not None
     found = False
