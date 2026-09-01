@@ -76,6 +76,15 @@ segments, review Plan B against the automatic-spend boundary, approve or reject,
 backend-derived execution plus deterministic `RESOLVED` completion. A live browser smoke used
 Nova Pro and DynamoDB end to end.
 
+**Milestone 6 — COMPLETE.** DayMend is deployed in `us-east-1` with Angular on private S3 behind
+CloudFront, FastAPI on App Runner, Nova Pro through Strands/Bedrock, and the existing complete
+`RecoveryCase` aggregate in an on-demand DynamoDB table. A public browser smoke created Plan A,
+processed Grandma's decline, invalidated and replanned, paused at the `$30` autonomy boundary,
+approved a fresh `$114` Plan B, completed seven simulated actions, reached `RESOLVED`, and
+restored the same version-6 case after a full page reload. App Runner streams safe structured
+lifecycle and Bedrock telemetry to CloudWatch. AgentCore was seriously evaluated and not
+deployed; the exact boundary decision is in [`docs/deployment.md`](docs/deployment.md).
+
 These are deliberately separate mechanisms:
 
 - **Initial-plan repair:** a draft was never valid; world state is unchanged; validator findings
@@ -124,8 +133,14 @@ boundary; Milestone 3 deterministically pauses and resumes execution around it.
 │   ├── src/app
 │   ├── angular.json
 │   └── package.json
+├── infra
+│   ├── foundation.yaml
+│   └── service.yaml
+├── scripts
+│   └── deploy-aws.sh
 └── docs
     ├── architecture.md
+    ├── deployment.md
     ├── demo-flow.md
     └── milestones.md
 ```
@@ -277,11 +292,41 @@ variables shown above before starting Uvicorn. Then open `http://localhost:4200`
 **Simulate nanny cancellation**, **Simulate Grandma decline**, and the plan-specific approval.
 The UI never fabricates a plan or completion state; it renders each returned `RecoveryCase`.
 
+Production loads its API endpoint from `public/config.js`, which the deployment script generates
+after App Runner is available. No source edit is needed between local and hosted use. The browser
+stores only the current synthetic recovery-case ID and reloads that case from the API after a
+page refresh.
+
 Frontend verification:
 
 ```bash
 npm test -- --watch=false --browsers=ChromeHeadless
 npm run build
+```
+
+## Hosted AWS demo
+
+- Frontend: <https://d28bm0qb8qheeh.cloudfront.net>
+- Backend health: <https://5zvgskmgiu.us-east-1.awsapprunner.com/health>
+- Region: `us-east-1`
+- Model: `amazon.nova-pro-v1:0`
+- Persistence: `daymend-demo-recovery-cases` (DynamoDB, on demand)
+
+The demo is public, unauthenticated, and uses synthetic data only. Click **Simulate nanny
+cancellation**, then **Simulate Grandma decline**, approve the plan-specific amount if requested,
+and refresh the page after `RESOLVED` to verify persisted state. Fresh model runs may choose a
+different valid plan and cost; the stable behavior is deterministic coverage validation and an
+approval pause whenever cost exceeds the `$30` automatic-spend limit.
+
+AWS services used are CloudFormation, ECR, App Runner, Bedrock, DynamoDB, S3, CloudFront,
+CloudWatch Logs, and IAM. Deployment, resource names, least-privilege runtime policy, operations,
+observability evidence, and AgentCore evaluation are documented in
+[`docs/deployment.md`](docs/deployment.md). Reproduce the deployment with:
+
+```bash
+AWS_REGION=us-east-1 \
+DAYMEND_BEDROCK_MODEL_ID=amazon.nova-pro-v1:0 \
+./scripts/deploy-aws.sh
 ```
 
 ## Roadmap

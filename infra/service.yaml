@@ -1,0 +1,132 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: DayMend FastAPI App Runner service and least-privilege runtime roles.
+
+Parameters:
+  ResourcePrefix:
+    Type: String
+    Default: daymend-demo
+    AllowedPattern: "[a-z0-9-]+"
+  ImageIdentifier:
+    Type: String
+  RecoveryCasesTableName:
+    Type: String
+  FrontendOrigin:
+    Type: String
+    AllowedPattern: "https://.*"
+  BedrockModelId:
+    Type: String
+    Default: amazon.nova-pro-v1:0
+    AllowedValues:
+      - amazon.nova-pro-v1:0
+
+Resources:
+  AppRunnerEcrAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ResourcePrefix}-apprunner-ecr-access
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: build.apprunner.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: PullDayMendImage
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                Resource: !Sub arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/${ResourcePrefix}-backend
+
+  AppRunnerInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ResourcePrefix}-runtime
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: tasks.apprunner.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: DayMendRuntime
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: RecoveryCasePersistence
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                Resource: !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${RecoveryCasesTableName}
+              - Sid: InvokeNovaPro
+                Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource: !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}
+
+  BackendAutoScaling:
+    Type: AWS::AppRunner::AutoScalingConfiguration
+    Properties:
+      AutoScalingConfigurationName: !Sub ${ResourcePrefix}-autoscaling
+      MaxConcurrency: 10
+      MaxSize: 2
+      MinSize: 1
+      Tags:
+        - Key: Project
+          Value: DayMend
+
+  BackendService:
+    Type: AWS::AppRunner::Service
+    Properties:
+      ServiceName: !Sub ${ResourcePrefix}-api
+      AutoScalingConfigurationArn: !GetAtt BackendAutoScaling.AutoScalingConfigurationArn
+      HealthCheckConfiguration:
+        Protocol: TCP
+        Interval: 10
+        Timeout: 5
+        HealthyThreshold: 1
+        UnhealthyThreshold: 5
+      InstanceConfiguration:
+        Cpu: 1 vCPU
+        Memory: 2 GB
+        InstanceRoleArn: !GetAtt AppRunnerInstanceRole.Arn
+      SourceConfiguration:
+        AutoDeploymentsEnabled: false
+        AuthenticationConfiguration:
+          AccessRoleArn: !GetAtt AppRunnerEcrAccessRole.Arn
+        ImageRepository:
+          ImageIdentifier: !Ref ImageIdentifier
+          ImageRepositoryType: ECR
+          ImageConfiguration:
+            Port: "8000"
+            RuntimeEnvironmentVariables:
+              - Name: AWS_REGION
+                Value: !Ref AWS::Region
+              - Name: DAYMEND_BEDROCK_MODEL_ID
+                Value: !Ref BedrockModelId
+              - Name: DAYMEND_RECOVERY_REPOSITORY
+                Value: dynamodb
+              - Name: DAYMEND_RECOVERY_TABLE
+                Value: !Ref RecoveryCasesTableName
+              - Name: DAYMEND_ALLOWED_ORIGINS
+                Value: !Sub ${FrontendOrigin},http://localhost:4200,http://127.0.0.1:4200
+      Tags:
+        - Key: Project
+          Value: DayMend
+
+Outputs:
+  BackendServiceArn:
+    Value: !GetAtt BackendService.ServiceArn
+  BackendServiceUrl:
+    Value: !Sub https://${BackendService.ServiceUrl}

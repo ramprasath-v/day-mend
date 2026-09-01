@@ -130,3 +130,20 @@ selected a valid `$48` employer-backup plan rather than the offline `$92` mixed-
 plan still crossed the `$30` autonomy limit, so the UI presented one real approval. Approval
 resumed the same case, both required actions succeeded, deterministic completion passed, and the
 UI rendered `RESOLVED` at version 6. Model variability is reported rather than hidden or overridden.
+
+## Milestone 6 hosted boundary
+
+The public demo at <https://d28bm0qb8qheeh.cloudfront.net> completed the full browser story on
+case `e8cc73fe-6556-427c-a523-fb40151c3bfa`. Nova Pro created `$92` Plan A
+`recovery_plan_2`; Grandma's real event invalidated three assumptions and preserved five Plan A
+segments; Nova produced valid `$114` Plan B `recovery_plan_4`; and deterministic policy paused at
+the `$30` automatic-spend boundary. The parent approved, all seven simulated actions succeeded,
+and deterministic completion set `RESOLVED` at version 6. Reloading the entire CloudFront page
+restored that same state from `daymend-demo-recovery-cases`.
+
+Observed browser durations were approximately 24 seconds for initial planning, 51 seconds for
+replanning, and 3.3 seconds for approval/execution/completion. A second public API run on the
+observability-enabled revision recorded real Nova Pro latency, all five Strands tools, validation
+attempts, invalidation, approval, actions, and resolution as structured JSON in CloudWatch. Costs
+and plan identifiers are evidence from these runs, not fixture branches or promised future
+outputs.

@@ -71,7 +71,7 @@ outcome without a chatbot UI.
 **Status:** Complete. Angular 20 standalone components, a typed API service, and a signal-based
 store render the normal day, backend-driven recovery states, meaningful event timeline, friendly
 coverage plan, Plan A invalidation/preservation, Plan B, approval boundary, execution results,
-and verified completion. Nine Chrome unit tests and the production build pass. A live browser
+and verified completion. Ten Chrome unit tests and the production build pass. A live browser
 flow reached Nova Pro, DynamoDB, approval, two successful simulated actions, and `RESOLVED` on
 case `d8c9ebdb-b1ac-423b-b6e3-67e20eb8fc92` at version 6.
 
@@ -80,12 +80,30 @@ workflow/status interface that accurately reflects backend state.
 
 ## Milestone 6 — AWS deployment + observability
 
-**Goal:** Use Bedrock, DynamoDB, CloudWatch, deployment infrastructure, AgentCore if practical,
-and one useful real external integration.
+**Goal:** Deploy the existing Angular/FastAPI recovery workflow with real Strands, Bedrock,
+DynamoDB, scoped IAM, production configuration, and CloudWatch evidence; deploy AgentCore only
+if it preserves the proven workflow without a major rewrite.
+
+**Status:** Complete. CloudFormation deploys private S3 + CloudFront, ECR + App Runner, and the
+on-demand `daymend-demo-recovery-cases` table. The public browser flow created Plan A, processed
+Grandma's decline, produced a valid Plan B, requested and accepted plan-specific approval,
+completed seven simulated actions, reached `RESOLVED`, and restored the same version-6 case after
+a full page reload. The active App Runner stream contains allow-listed JSON lifecycle events and
+real Nova Pro model/tool/latency evidence. Backend tests increased to 88 and Angular tests to 10.
+Production CORS and runtime API configuration are verified, and the repository secret scan is
+clean after review of one intentional fake redaction-test sentinel.
+
+**AgentCore decision:** **EVALUATED — NOT DEPLOYED.** AgentCore Runtime can host the Strands
+reasoning component, but the current workflow performs bounded structured calls around
+deterministic validation, request-local tool context, persistence, approval, and completion.
+Extracting a remote reasoning gateway plus session/auth/retry semantics is a significant
+architecture change; deploying the whole FastAPI service would put deterministic rules in the
+wrong boundary. The working App Runner + in-process Strands/Bedrock deployment is retained. See
+`docs/deployment.md` for the exact evaluation.
 
 **Exit criterion:** The primary scenario runs in a deployed environment with persistent state,
-searchable logs/metrics, documented operations, and at least one verified external integration;
-an explicit decision records whether AgentCore is used.
+searchable logs/metrics and documented operations; an explicit decision records whether
+AgentCore is used.
 
 ## Milestone 7 — Submission polish
 

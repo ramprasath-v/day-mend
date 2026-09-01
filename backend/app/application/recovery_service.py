@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from datetime import UTC, datetime
 from enum import StrEnum
+from time import perf_counter
 from typing import Protocol
 from uuid import uuid4
 
@@ -22,6 +23,7 @@ from app.models import (
     RecoveryEventType,
     RecoveryStatus,
 )
+from app.observability import log_event
 from app.repositories import RecoveryCaseRepository
 from app.services import (
     ApprovalService,
@@ -147,13 +149,35 @@ class StrandsRecoveryPlanningGateway:
     def plan_initial(self, disruption: str, scenario: DemoScenario) -> InitialPlanningResult:
         recorder = ToolInvocationRecorder()
         agent = build_recovery_agent(self._config, recorder)
-        return run_initial_planning_session(
-            agent=agent,
-            recorder=recorder,
-            disruption=disruption,
-            scenario=scenario,
+        started = perf_counter()
+        try:
+            result = run_initial_planning_session(
+                agent=agent,
+                recorder=recorder,
+                disruption=disruption,
+                scenario=scenario,
+                model_id=self._config.model_id,
+            )
+        except Exception as exc:
+            log_event(
+                "bedrock_invocation",
+                phase="initial_planning",
+                model_id=self._config.model_id,
+                duration_ms=_duration_ms(started),
+                success=False,
+                error_type=type(exc).__name__,
+            )
+            raise
+        log_event(
+            "bedrock_invocation",
+            phase="initial_planning",
             model_id=self._config.model_id,
+            duration_ms=_duration_ms(started),
+            success=result.success,
+            attempt_number=result.total_attempts,
+            tools_used=result.tools_used,
         )
+        return result
 
     def replan(
         self,
@@ -163,13 +187,37 @@ class StrandsRecoveryPlanningGateway:
     ) -> ReplanningResult:
         recorder = ToolInvocationRecorder()
         agent = build_recovery_agent(self._config, recorder)
-        return process_external_event(
-            recovery_case=recovery_case,
-            event=event,
-            scenario=scenario,
-            agent=agent,
-            recorder=recorder,
+        started = perf_counter()
+        try:
+            result = process_external_event(
+                recovery_case=recovery_case,
+                event=event,
+                scenario=scenario,
+                agent=agent,
+                recorder=recorder,
+            )
+        except Exception as exc:
+            log_event(
+                "bedrock_invocation",
+                recovery_case_id=recovery_case.case_id,
+                phase="replanning",
+                model_id=self._config.model_id,
+                duration_ms=_duration_ms(started),
+                success=False,
+                error_type=type(exc).__name__,
+            )
+            raise
+        log_event(
+            "bedrock_invocation",
+            recovery_case_id=recovery_case.case_id,
+            phase="replanning",
+            model_id=self._config.model_id,
+            duration_ms=_duration_ms(started),
+            success=result.success,
+            attempt_number=result.total_attempts,
+            tools_used=result.tools_used,
         )
+        return result
 
 
 class RecoveryApplicationService:
@@ -196,12 +244,53 @@ class RecoveryApplicationService:
     def start_recovery(self, command: StartRecoveryCommand) -> RecoveryCase:
         scenario = self._scenario_factory()
         disruption = f"{command.disruption_type}: {command.message}"
-        planning = self._planning.plan_initial(disruption, scenario)
+        case_id = self._id_factory()
+        log_event("recovery_started", recovery_case_id=case_id)
+        log_event("planning_started", recovery_case_id=case_id, phase="initial_planning")
+        started = perf_counter()
+        try:
+            planning = self._planning.plan_initial(disruption, scenario)
+        except ValueError as exc:
+            log_event(
+                "recovery_failed",
+                recovery_case_id=case_id,
+                phase="initial_planning",
+                duration_ms=_duration_ms(started),
+                error_type=type(exc).__name__,
+            )
+            raise
+        for attempt in planning.attempts:
+            log_event(
+                "planning_attempt",
+                recovery_case_id=case_id,
+                phase="initial_planning",
+                attempt_number=attempt.attempt_number,
+                plan_id=attempt.proposed_plan.plan_id,
+                valid=attempt.validation.valid,
+                issue_count=len(attempt.validation.issues),
+            )
         if not planning.success or planning.final_plan is None:
+            log_event(
+                "recovery_failed",
+                recovery_case_id=case_id,
+                phase="initial_planning",
+                duration_ms=_duration_ms(started),
+                error_type="PlanningFailed",
+            )
             raise PlanningFailed("DayMend could not produce a valid initial recovery plan.")
+        log_event(
+            "planning_validated",
+            recovery_case_id=case_id,
+            plan_id=planning.final_plan.plan_id,
+            attempt_number=planning.total_attempts,
+            duration_ms=_duration_ms(started),
+            model_id=planning.model_id,
+            cost=planning.deterministic_total_cost,
+            requires_approval=planning.requires_approval,
+            valid=True,
+        )
 
         now = self._clock()
-        case_id = self._id_factory()
         disruption_event = RecoveryEvent(
             event_id=f"disruption:{case_id}",
             event_type=RecoveryEventType.DISRUPTION_DETECTED,
@@ -240,6 +329,9 @@ class RecoveryApplicationService:
         self._check_expected_version(recovery_case, command.expected_version)
         if command.event_type is not RecoveryEventType.CAREGIVER_DECLINED:
             raise EventNotApplicable(f"Event type {command.event_type} is not supported.")
+        log_event("caregiver_declined", recovery_case_id=case_id, status=recovery_case.status)
+        log_event("replanning_started", recovery_case_id=case_id, phase="replanning")
+        started = perf_counter()
 
         scenario = self._scenario_for(recovery_case)
         event = RecoveryEvent(
@@ -253,14 +345,67 @@ class RecoveryApplicationService:
         try:
             result = self._planning.replan(recovery_case, event, scenario)
         except ValueError as exc:
+            log_event(
+                "recovery_failed",
+                recovery_case_id=case_id,
+                phase="replanning",
+                duration_ms=_duration_ms(started),
+                error_type=type(exc).__name__,
+            )
             raise EventNotApplicable(str(exc)) from exc
+        except Exception as exc:
+            log_event(
+                "recovery_failed",
+                recovery_case_id=case_id,
+                phase="replanning",
+                duration_ms=_duration_ms(started),
+                error_type=type(exc).__name__,
+            )
+            raise
+
+        for _assumption in result.invalidated_assumptions:
+            log_event(
+                "assumption_invalidated",
+                recovery_case_id=case_id,
+                plan_id=recovery_case.active_recovery_plan.plan_id,
+                invalidated_count=1,
+            )
+        for attempt in result.planning_attempts:
+            log_event(
+                "planning_attempt",
+                recovery_case_id=case_id,
+                phase="replanning",
+                attempt_number=attempt.attempt_number,
+                plan_id=attempt.proposed_plan.plan_id,
+                valid=attempt.validation.valid,
+                issue_count=len(attempt.validation.issues),
+            )
 
         replanned = self.repository.save(
             result.recovery_case,
             expected_version=recovery_case.version,
         )
         if not result.success:
+            log_event(
+                "recovery_failed",
+                recovery_case_id=case_id,
+                phase="replanning",
+                duration_ms=_duration_ms(started),
+                error_type="ReplanningFailed",
+            )
             raise ReplanningFailed("DayMend could not produce a valid replacement plan.")
+        log_event(
+            "replan_validated",
+            recovery_case_id=case_id,
+            plan_id=result.final_plan.plan_id,
+            attempt_number=result.total_attempts,
+            duration_ms=_duration_ms(started),
+            cost=result.deterministic_total_cost,
+            requires_approval=result.requires_approval,
+            invalidated_count=len(result.invalidated_assumptions),
+            preserved_count=len(result.preserved_segments),
+            valid=True,
+        )
 
         gate = self._approval.apply_autonomy_gate(
             replanned,
@@ -269,6 +414,14 @@ class RecoveryApplicationService:
             now=self._now(replanned.updated_at),
         )
         if gate.approval_required:
+            log_event(
+                "approval_requested",
+                recovery_case_id=case_id,
+                plan_id=gate.recovery_case.active_recovery_plan.plan_id,
+                approval_id=gate.approval_request.approval_id,
+                cost=gate.approval_request.amount,
+                status=gate.recovery_case.status,
+            )
             return gate.recovery_case
         return self._execute_and_complete(gate.recovery_case.case_id)
 
@@ -297,6 +450,15 @@ class RecoveryApplicationService:
         except WorkflowInvariantError:
             raise
 
+        log_event(
+            "approval_decision",
+            recovery_case_id=case_id,
+            plan_id=result.approval.plan_id,
+            approval_id=approval_id,
+            decision=command.decision,
+            status=result.approval.status,
+        )
+
         if command.decision is ApprovalDecision.REJECT:
             return result.recovery_case
         if result.idempotent and result.recovery_case.status is RecoveryStatus.RESOLVED:
@@ -306,18 +468,60 @@ class RecoveryApplicationService:
     def _execute_and_complete(self, case_id: str) -> RecoveryCase:
         current = self.repository.get(case_id)
         scenario = self._scenario_for(current)
+        plan_id = current.active_recovery_plan.plan_id
+        log_event("execution_started", recovery_case_id=case_id, plan_id=plan_id)
         execution = self._execution.execute(
             case_id,
             scenario.policy,
             now=self._now(current.updated_at),
         )
+        for action in execution.actions:
+            log_event(
+                "execution_action_completed",
+                recovery_case_id=case_id,
+                plan_id=plan_id,
+                action_id=action.action_id,
+                action_type=action.action_type,
+                status=action.status,
+                success=action.status.value == "SUCCEEDED",
+            )
         if not execution.succeeded:
+            log_event(
+                "recovery_failed",
+                recovery_case_id=case_id,
+                plan_id=plan_id,
+                phase="execution",
+                error_type="ExecutionFailed",
+            )
             return execution.recovery_case
         completion = self._completion.verify_and_resolve(
             case_id,
             scenario,
             now=self._now(execution.recovery_case.updated_at),
         )
+        log_event(
+            "completion_verified",
+            recovery_case_id=case_id,
+            plan_id=plan_id,
+            success=completion.verified,
+            status=completion.recovery_case.status,
+        )
+        if completion.verified:
+            log_event(
+                "recovery_resolved",
+                recovery_case_id=case_id,
+                plan_id=plan_id,
+                version=completion.recovery_case.version,
+                status=completion.recovery_case.status,
+            )
+        else:
+            log_event(
+                "recovery_failed",
+                recovery_case_id=case_id,
+                plan_id=plan_id,
+                phase="completion",
+                error_type="CompletionVerificationFailed",
+            )
         return completion.recovery_case
 
     def _scenario_for(self, recovery_case: RecoveryCase) -> DemoScenario:
@@ -341,3 +545,7 @@ class RecoveryApplicationService:
             raise ApplicationConflict(
                 f"Expected recovery version {expected_version}, found {recovery_case.version}."
             )
+
+
+def _duration_ms(started: float) -> int:
+    return round((perf_counter() - started) * 1000)

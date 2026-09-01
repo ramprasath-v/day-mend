@@ -12,6 +12,7 @@ describe('DayMend recovery experience', () => {
   let http: HttpTestingController;
 
   beforeEach(async () => {
+    localStorage.clear();
     await TestBed.configureTestingModule({
       imports: [App],
       providers: [provideHttpClient(), provideHttpClientTesting()],
@@ -148,5 +149,15 @@ describe('DayMend recovery experience', () => {
     expect(RECOVERY_STATUS_COPY.APPROVAL_REQUIRED.title).toContain('valid recovery plan');
     expect(RECOVERY_STATUS_COPY.RESOLVED.title).toBe('Day recovered');
     expect(RECOVERY_STATUS_COPY.FAILED.title).not.toContain('FAILED');
+  });
+
+  it('restores the persisted recovery case after a page reload', () => {
+    localStorage.setItem('daymend.recoveryCaseId', 'case-ui-demo');
+    const fixture = create();
+    const request = http.expectOne(`${environment.apiBaseUrl}/recoveries/case-ui-demo`);
+    expect(request.request.method).toBe('GET');
+    request.flush(resolvedCase);
+    fixture.detectChanges();
+    expect(text(fixture)).toContain('Day recovered');
   });
 });

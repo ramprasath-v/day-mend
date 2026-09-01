@@ -9,6 +9,7 @@ export type RecoveryAction = 'starting' | 'declining' | 'approving' | 'rejecting
 
 @Injectable({ providedIn: 'root' })
 export class RecoveryStore {
+  private readonly storageKey = 'daymend.recoveryCaseId';
   private readonly api = inject(RecoveryApiService);
 
   readonly currentCase = signal<RecoveryCase | null>(null);
@@ -16,6 +17,13 @@ export class RecoveryStore {
   readonly actionInProgress = signal<RecoveryAction | null>(null);
   readonly loading = computed(() => this.actionInProgress() !== null);
   readonly error = signal<string | null>(null);
+
+  constructor() {
+    const storedCaseId = globalThis.localStorage?.getItem(this.storageKey);
+    if (storedCaseId) {
+      this.run('refreshing', () => this.api.getRecovery(storedCaseId));
+    }
+  }
 
   readonly loadingMessage = computed(() => {
     const messages: Record<RecoveryAction, string> = {
@@ -88,7 +96,10 @@ export class RecoveryStore {
     request()
       .pipe(finalize(() => this.actionInProgress.set(null)))
       .subscribe({
-        next: (recovery) => this.currentCase.set(recovery),
+        next: (recovery) => {
+          this.currentCase.set(recovery);
+          globalThis.localStorage?.setItem(this.storageKey, recovery.recovery_case_id);
+        },
         error: (error: HttpErrorResponse) => this.error.set(this.safeMessage(error)),
       });
   }

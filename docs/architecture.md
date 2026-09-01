@@ -322,3 +322,36 @@ Milestone 5 adds two safe API fields from existing state: full previous-plan vie
 visualization and the persisted family policy limit/currency for the approval explanation. It does
 not change any Milestone 1–4 business rule. No chat, NgRx, UI framework, provider marketplace,
 real external integration, authentication, deployment, or additional agent was added.
+
+## Milestone 6 deployed architecture
+
+```text
+Browser
+  → CloudFront HTTPS → private S3 Angular bundle + runtime config
+  → App Runner HTTPS → FastAPI → RecoveryApplicationService
+                                ├→ one Strands Recovery Agent
+                                │    → Amazon Bedrock / Nova Pro
+                                ├→ deterministic validator / invalidation
+                                ├→ deterministic approval / execution / completion
+                                └→ DynamoDB RecoveryCase aggregate
+
+App Runner stdout/stderr → CloudWatch Logs (structured safe lifecycle events)
+CloudFormation → S3, CloudFront, ECR, App Runner, DynamoDB, IAM
+```
+
+Deployment wraps rather than replaces Milestones 1–5. Angular uses a generated runtime API URL
+and retains only the current synthetic case ID so a page reload asks FastAPI for authoritative
+state. App Runner receives the exact CloudFront CORS origin plus local development origins.
+The application role can invoke only regional Nova Pro and read/write only the demo recovery
+table. App Runner's service-linked role owns CloudWatch delivery.
+
+The structured event layer is intentionally allow-listed. It records case/plan identifiers,
+attempts, validation outcome, latency, model ID, safe tool names, approval/action status, and
+completion. It never accepts raw prompts, messages, credentials, tokens, or hidden reasoning.
+
+AgentCore Runtime was evaluated as the future host for the reasoning boundary, but not deployed.
+Its invocation/session contract is not a drop-in replacement for FastAPI's bounded orchestration.
+A safe integration requires a remote `RecoveryPlanningGateway` adapter that preserves structured
+repair and replanning semantics while deterministic validation, persistence, approval, execution,
+and completion remain outside AgentCore. That split is documented in `docs/deployment.md`; the
+working deployment does not falsely claim AgentCore.
