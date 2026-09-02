@@ -10,6 +10,7 @@ from app.agent.recovery_agent import (
     PlanningAttempt,
     RecoveryAgentLike,
     ToolInvocationRecorder,
+    model_call_count,
     run_bounded_plan_attempts,
 )
 from app.fixtures import DemoScenario
@@ -52,6 +53,11 @@ class ReplanningResult(ContractModel):
     recovery_case: RecoveryCase
     tools_used: list[str] = Field(default_factory=list)
     status_history: list[RecoveryStatus] = Field(default_factory=list)
+    architecture: str = "single"
+    orchestrator_invocation_count: int = Field(default=0, ge=0)
+    planner_invocation_count: int = Field(default=0, ge=0)
+    model_call_count: int = Field(default=0, ge=0)
+    tool_call_count: int = Field(default=0, ge=0)
 
 
 def process_external_event(
@@ -73,7 +79,7 @@ def process_external_event(
     replan_context = _replanning_context(outcome)
 
     with use_scenario(outcome.updated_scenario):
-        agent(
+        context_result = agent(
             "A previously valid recovery plan has been affected by a real external event. "
             "This is world-state replanning, not initial-plan repair. Refresh all five "
             "authoritative context tools because the world state changed. Analyze the recorded "
@@ -95,6 +101,30 @@ def process_external_event(
             max_attempts=max_attempts,
             repair_scope="Plan-B draft",
         )
+
+    return build_replanning_result(
+        outcome=outcome,
+        event=event,
+        attempts=attempts,
+        tools_used=recorder.tool_names[tools_before_replan:],
+        planner_invocation_count=1 + len(attempts),
+        model_call_count=model_call_count(context_result)
+        + sum(attempt.model_call_count for attempt in attempts),
+    )
+
+
+def build_replanning_result(
+    *,
+    outcome,
+    event: RecoveryEvent,
+    attempts: list[PlanningAttempt],
+    tools_used: list[str],
+    architecture: str = "single",
+    orchestrator_invocation_count: int = 0,
+    planner_invocation_count: int = 0,
+    model_call_count: int = 0,
+) -> ReplanningResult:
+    """Apply validated planning attempts to a deterministic invalidation outcome."""
 
     final_validation = attempts[-1].validation
     success = final_validation.valid
@@ -137,12 +167,17 @@ def process_external_event(
         requires_approval=final_validation.requires_approval,
         final_errors=[] if success else final_validation.issues,
         recovery_case=updated_case,
-        tools_used=recorder.tool_names[tools_before_replan:],
+        tools_used=tools_used,
         status_history=[
-            recovery_case.status,
+            outcome.previous_status,
             RecoveryStatus.REPLANNING,
             updated_case.status,
         ],
+        architecture=architecture,
+        orchestrator_invocation_count=orchestrator_invocation_count,
+        planner_invocation_count=planner_invocation_count,
+        model_call_count=model_call_count,
+        tool_call_count=len(tools_used),
     )
 
 

@@ -147,3 +147,21 @@ observability-enabled revision recorded real Nova Pro latency, all five Strands 
 attempts, invalidation, approval, actions, and resolution as structured JSON in CloudWatch. Costs
 and plan identifiers are evidence from these runs, not fixture branches or promised future
 outputs.
+
+## Milestone 6.5A local multi-agent boundary
+
+The opt-in local flow preserves the same parent-visible story while separating two reasoning
+responsibilities. The Recovery Orchestrator creates a factual, transient planning brief for the
+initial disruption and another brief after deterministic caregiver-decline invalidation. The
+Constraint Planner constructs Plan A/Plan B and receives any validator repair findings directly.
+All later autonomy, persistence, simulated execution, and completion behavior is unchanged.
+
+The complete live Nova Pro proof used case
+`daymend-multi-dda7ca5c-3b15-47ce-bc56-48699635e332`. Plan A passed on proposal 2 at `$92`.
+Grandma's decline recorded event
+`daymend-multi-dda7ca5c-3b15-47ce-bc56-48699635e332:grandma-declined`, invalidated one matching
+assumption, and preserved five segments. The replanning brief identified the recorded event,
+active plan/case state, affected window, preserved segments, and Grandma exclusion. Plan B passed
+on proposal 3 at `$114`; deterministic policy requested and recorded approval. Six simulated
+actions succeeded, final coverage verification passed, and the same case reached `RESOLVED` at
+version 6. This path is not deployed and the single-agent architecture remains the default.

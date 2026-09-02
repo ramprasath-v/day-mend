@@ -59,6 +59,7 @@ class PlanningAttempt(ContractModel):
     attempt_number: int = Field(ge=1, le=MAX_PLAN_ATTEMPTS)
     proposed_plan: RecoveryPlan
     validation: PlanValidationResult
+    model_call_count: int = Field(default=0, ge=0)
 
 
 class InitialPlanningResult(ContractModel):
@@ -73,6 +74,11 @@ class InitialPlanningResult(ContractModel):
     deterministic_total_cost: Decimal = Field(ge=0)
     requires_approval: bool
     final_errors: list[PlanValidationIssue] = Field(default_factory=list)
+    architecture: str = "single"
+    orchestrator_invocation_count: int = Field(default=0, ge=0)
+    planner_invocation_count: int = Field(default=0, ge=0)
+    model_call_count: int = Field(default=0, ge=0)
+    tool_call_count: int = Field(default=0, ge=0)
 
 
 def build_recovery_agent(
@@ -113,7 +119,7 @@ def run_initial_planning_session(
         raise ValueError(f"max_attempts must be between 1 and {MAX_PLAN_ATTEMPTS}")
 
     with use_scenario(scenario):
-        agent(
+        context_result = agent(
             "Analyze this disruption and build a feasible recovery strategy: " + disruption + " "
             "Gather all required context with the five tools and complete the feasibility, cost, "
             "and autonomy checks in your instructions. Do not call the RecoveryPlan structured "
@@ -135,11 +141,14 @@ def run_initial_planning_session(
             repair_scope="initial-planning",
         )
 
-    return _planning_result(
+    return build_planning_result(
         success=attempts[-1].validation.valid,
         attempts=attempts,
         recorder=recorder,
         model_id=model_id,
+        model_call_count=_model_call_count(context_result)
+        + sum(attempt.model_call_count for attempt in attempts),
+        planner_invocation_count=1 + len(attempts),
     )
 
 
@@ -206,6 +215,7 @@ def run_bounded_plan_attempts(
                 attempt_number=attempt_number,
                 proposed_plan=proposed_plan,
                 validation=validation,
+                model_call_count=_model_call_count(result),
             )
         )
         if validation.valid:
@@ -239,12 +249,16 @@ def _repair_prompt(
     )
 
 
-def _planning_result(
+def build_planning_result(
     *,
     success: bool,
     attempts: list[PlanningAttempt],
     recorder: ToolInvocationRecorder,
     model_id: str,
+    architecture: str = "single",
+    orchestrator_invocation_count: int = 0,
+    planner_invocation_count: int = 0,
+    model_call_count: int = 0,
 ) -> InitialPlanningResult:
     last_validation = attempts[-1].validation
     return InitialPlanningResult(
@@ -257,4 +271,21 @@ def _planning_result(
         deterministic_total_cost=last_validation.deterministic_total_cost,
         requires_approval=last_validation.requires_approval,
         final_errors=[] if success else last_validation.issues,
+        architecture=architecture,
+        orchestrator_invocation_count=orchestrator_invocation_count,
+        planner_invocation_count=planner_invocation_count,
+        model_call_count=model_call_count,
+        tool_call_count=len(recorder.tool_names),
     )
+
+
+def model_call_count(result: Any) -> int:
+    """Count Bedrock event-loop cycles for one Strands invocation when metrics exist."""
+
+    return _model_call_count(result)
+
+
+def _model_call_count(result: Any) -> int:
+    metrics = getattr(result, "metrics", None)
+    invocation = getattr(metrics, "latest_agent_invocation", None)
+    return len(invocation.cycles) if invocation is not None else 0

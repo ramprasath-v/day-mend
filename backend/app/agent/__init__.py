@@ -1,4 +1,4 @@
-"""The single Strands Recovery Agent used by DayMend."""
+"""DayMend's stable single-agent and opt-in two-agent planning architectures."""
 
 from app.agent.recovery_agent import (
     MAX_PLAN_ATTEMPTS,

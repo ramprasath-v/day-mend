@@ -355,3 +355,34 @@ A safe integration requires a remote `RecoveryPlanningGateway` adapter that pres
 repair and replanning semantics while deterministic validation, persistence, approval, execution,
 and completion remain outside AgentCore. That split is documented in `docs/deployment.md`; the
 working deployment does not falsely claim AgentCore.
+
+## Milestone 6.5A local multi-agent architecture
+
+Production remains the Milestone 6 single-agent deployment. Locally, the opt-in architecture is:
+
+```text
+RecoveryApplicationService
+  → Recovery Orchestrator Agent
+      → transient PlanningBrief
+  → Constraint Planner Agent
+      → candidate RecoveryPlan
+  → deterministic PlanValidator
+      → structured findings return only to the same Planner (maximum 3 proposals)
+  → existing persistence / autonomy / execution / completion services
+```
+
+The split is based on durable reasoning responsibilities. The Orchestrator interprets the
+recovery objective and, after a deterministic world-state update, scopes affected versus
+preserved work. Its replanning brief carries the triggering event, current case/plan identity,
+invalidated assumption IDs, affected windows, preserved segments, and excluded caregiver facts.
+Application code overwrites those factual fields from authoritative state; they are not trusted
+model assertions and the brief is not persisted.
+
+The Constraint Planner constructs the complete schedule from the brief and all five authoritative
+context tools. It alone receives deterministic validator findings and repairs rejected drafts.
+The Orchestrator has only childcare-schedule context access; it cannot propose a `RecoveryPlan`.
+Neither agent owns exact cost, validity, approval, persistence, execution, or completion.
+
+`DAYMEND_AGENT_ARCHITECTURE=single` is the default and retains the deployed path;
+`DAYMEND_AGENT_ARCHITECTURE=multi` enables the local proof. No frontend/API contract or DynamoDB
+schema changed. AgentCore and backup-care research remain outside this milestone.

@@ -17,6 +17,8 @@ if not _LOGGER.handlers:
 _SAFE_FIELDS = {
     "action_id",
     "action_type",
+    "agent_role",
+    "architecture",
     "approval_id",
     "attempt_number",
     "cost",
@@ -26,7 +28,9 @@ _SAFE_FIELDS = {
     "invalidated_count",
     "issue_count",
     "model_id",
+    "model_call_count",
     "phase",
+    "planning_mode",
     "plan_id",
     "preserved_count",
     "recovery_case_id",
@@ -34,6 +38,7 @@ _SAFE_FIELDS = {
     "status",
     "success",
     "tools_used",
+    "tool_call_count",
     "valid",
     "version",
 }

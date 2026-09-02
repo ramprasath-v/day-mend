@@ -105,6 +105,30 @@ wrong boundary. The working App Runner + in-process Strands/Bedrock deployment i
 searchable logs/metrics and documented operations; an explicit decision records whether
 AgentCore is used.
 
+## Milestone 6.5A — Recovery orchestration + constraint planning
+
+**Goal:** Prove two materially distinct Strands reasoning roles without changing the deterministic
+safety boundary or deployed product behavior.
+
+**Status:** Complete locally; not deployed. The real Recovery Orchestrator produces a transient,
+authoritatively normalized `PlanningBrief`, while the real Constraint Planner owns Plan A/Plan B
+construction and the unchanged three-proposal validator-repair loop. The single-agent path remains
+the default and production architecture.
+
+A single live Nova Pro lifecycle used case
+`daymend-multi-dda7ca5c-3b15-47ce-bc56-48699635e332`. Initial planning reached valid `$92` Plan A
+on attempt 2. Grandma's typed decline deterministically invalidated one assumption and preserved
+five plan segments. The replanning Orchestrator ran from that changed state, and the Planner
+reached valid `$114` Plan B on attempt 3. Deterministic policy requested approval, approval resumed
+the same case, all six simulated actions succeeded, and `CompletionVerifier` set `RESOLVED` at
+version 6. The final reporting serializer failed after resolution because it expected the initial
+result's attempt field name; that local reporting bug is fixed and regression-tested without a
+second live run.
+
+**Exit criterion:** Both real Strands agents participate in initial and world-change planning; a
+live same-case lifecycle reaches deterministic `RESOLVED`; single-agent fallback, validator rules,
+retry cap, approval, execution, and completion remain unchanged.
+
 ## Milestone 7 — Submission polish
 
 **Goal:** Prepare the architecture diagram, README, tests, public repository, license, demo

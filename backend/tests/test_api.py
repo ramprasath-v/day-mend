@@ -15,7 +15,7 @@ from app.fixtures import DemoScenario
 from app.main import create_app
 from app.models import RecoveryCase, RecoveryEvent, RecoveryStatus
 from app.repositories import InMemoryRecoveryCaseRepository
-from app.services import PlanValidator
+from app.services import ApprovalService, PlanValidator, WorkflowInvariantError
 from tests.milestone2_helpers import at, validated_plan_a
 from tests.milestone3_helpers import plan_b_proposal
 
@@ -29,14 +29,16 @@ class _PlanBAgent:
     def __call__(self, _prompt: str, *, structured_output_model=None) -> _AgentResult:
         if structured_output_model is None:
             return _AgentResult()
-        return _AgentResult(plan_b_proposal())
+        return _AgentResult(
+            plan_b_proposal().model_copy(update={"plan_id": "repaired_recovery_plan"})
+        )
 
 
 class DeterministicPlanningGateway:
     """Replace only the model boundary while retaining all deterministic workflow code."""
 
     def plan_initial(self, _disruption: str, scenario: DemoScenario) -> InitialPlanningResult:
-        plan = validated_plan_a()
+        plan = validated_plan_a().model_copy(update={"plan_id": "repaired_recovery_plan"})
         validation = PlanValidator().validate(plan, scenario)
         return InitialPlanningResult(
             success=True,
@@ -175,15 +177,50 @@ def test_caregiver_decline_replans_same_persisted_case(client: TestClient) -> No
     body = response.json()
     assert body["recovery_case_id"] == created["recovery_case_id"]
     assert body["status"] == "APPROVAL_REQUIRED"
-    assert body["active_plan"]["plan_id"] == "plan-b-approval"
-    assert body["plan_history"][0]["plan_id"] == "plan-a"
-    assert body["previous_plans"][0]["plan_id"] == "plan-a"
+    assert body["active_plan"]["plan_id"] == "case-api-offline:plan:2"
+    assert body["plan_history"][0]["plan_id"] == "case-api-offline:plan:1"
+    assert body["previous_plans"][0]["plan_id"] == "case-api-offline:plan:1"
     assert len(body["previous_plans"][0]["coverage_segments"]) == 5
     assert body["latest_trigger"] == "event:event-api-offline"
     assert len(body["invalidated_assumptions"]) == 1
     assert body["pending_approval"]["status"] == "PENDING"
     persisted = client.get(f"/recoveries/{created['recovery_case_id']}").json()
     assert persisted == body
+
+
+def test_application_owns_accepted_plan_ids_and_stale_approval_identity(
+    client: TestClient,
+    repository: InMemoryRecoveryCaseRepository,
+) -> None:
+    created = _create(client)
+    case_id = created["recovery_case_id"]
+    plan_a_id = created["active_plan"]["plan_id"]
+    pending = _decline(client, case_id).json()
+    plan_b_id = pending["active_plan"]["plan_id"]
+
+    assert plan_a_id == f"{case_id}:plan:1"
+    assert plan_b_id == f"{case_id}:plan:2"
+    assert plan_a_id != plan_b_id
+    assert pending["previous_plans"][0]["plan_id"] == plan_a_id
+    assert pending["pending_approval"]["plan_id"] == plan_b_id
+
+    loaded = repository.get(case_id)
+    assert loaded.previous_plans[0].plan_id == plan_a_id
+    assert len(loaded.previous_plans) == 1
+    assert loaded.active_recovery_plan is not None
+    assert loaded.active_recovery_plan.plan_id == plan_b_id
+    stale = loaded.model_copy(update={"active_recovery_plan": loaded.previous_plans[0]})
+    repository.save(stale, expected_version=loaded.version)
+
+    with pytest.raises(
+        WorkflowInvariantError,
+        match="does not authorize the current active plan",
+    ):
+        ApprovalService(repository).approve(
+            case_id,
+            pending["pending_approval"]["approval_id"],
+            now=at(9, 20),
+        )
 
 
 def test_unrelated_event_returns_safe_conflict(client: TestClient) -> None:

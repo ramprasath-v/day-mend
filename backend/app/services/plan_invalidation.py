@@ -27,6 +27,7 @@ class InvalidationOutcome:
     """Internal deterministic output consumed by replanning orchestration."""
 
     recovery_case: RecoveryCase
+    previous_status: RecoveryStatus
     updated_scenario: DemoScenario
     original_valid_plan: RecoveryPlan
     invalidated_assumptions: tuple[PlanAssumption, ...]
@@ -185,6 +186,7 @@ class PlanInvalidationService:
         )
         return InvalidationOutcome(
             recovery_case=updated_case,
+            previous_status=recovery_case.status,
             updated_scenario=updated_scenario,
             original_valid_plan=original_plan,
             invalidated_assumptions=tuple(invalidated),

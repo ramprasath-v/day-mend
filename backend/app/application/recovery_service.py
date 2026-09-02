@@ -7,13 +7,18 @@ from time import perf_counter
 from typing import Protocol
 from uuid import uuid4
 
-from app.agent.config import RecoveryAgentConfig
+from app.agent.config import AgentArchitecture, RecoveryAgentConfig
+from app.agent.multi_agent import (
+    run_multi_agent_initial_planning,
+    run_multi_agent_replanning,
+)
 from app.agent.recovery_agent import (
     InitialPlanningResult,
     ToolInvocationRecorder,
     build_recovery_agent,
     run_initial_planning_session,
 )
+from app.agent.recovery_orchestrator import PlanningBrief
 from app.agent.replanning import ReplanningResult, process_external_event
 from app.fixtures import DemoScenario, get_demo_scenario
 from app.models import (
@@ -21,6 +26,7 @@ from app.models import (
     RecoveryCase,
     RecoveryEvent,
     RecoveryEventType,
+    RecoveryPlan,
     RecoveryStatus,
 )
 from app.observability import log_event
@@ -32,6 +38,7 @@ from app.services import (
     WorkflowInvariantError,
     apply_caregiver_decline_to_scenario,
     create_active_recovery_case,
+    materialize_caregiver_assumptions,
 )
 
 
@@ -141,23 +148,34 @@ class RecoveryPlanningGateway(Protocol):
 
 
 class StrandsRecoveryPlanningGateway:
-    """Real gateway to the single configured Strands Recovery Agent responsibility."""
+    """Real configurable gateway retaining the stable single-agent fallback."""
 
     def __init__(self, config: RecoveryAgentConfig | None = None) -> None:
         self._config = config or RecoveryAgentConfig.from_environment()
+        self.last_initial_brief: PlanningBrief | None = None
+        self.last_replanning_brief: PlanningBrief | None = None
+        self.last_initial_result: InitialPlanningResult | None = None
+        self.last_replanning_result: ReplanningResult | None = None
 
     def plan_initial(self, disruption: str, scenario: DemoScenario) -> InitialPlanningResult:
-        recorder = ToolInvocationRecorder()
-        agent = build_recovery_agent(self._config, recorder)
         started = perf_counter()
         try:
-            result = run_initial_planning_session(
-                agent=agent,
-                recorder=recorder,
-                disruption=disruption,
-                scenario=scenario,
-                model_id=self._config.model_id,
-            )
+            if self._config.architecture is AgentArchitecture.MULTI:
+                result, self.last_initial_brief = run_multi_agent_initial_planning(
+                    disruption=disruption,
+                    scenario=scenario,
+                    config=self._config,
+                )
+            else:
+                recorder = ToolInvocationRecorder()
+                agent = build_recovery_agent(self._config, recorder)
+                result = run_initial_planning_session(
+                    agent=agent,
+                    recorder=recorder,
+                    disruption=disruption,
+                    scenario=scenario,
+                    model_id=self._config.model_id,
+                )
         except Exception as exc:
             log_event(
                 "bedrock_invocation",
@@ -176,7 +194,11 @@ class StrandsRecoveryPlanningGateway:
             success=result.success,
             attempt_number=result.total_attempts,
             tools_used=result.tools_used,
+            architecture=result.architecture,
+            model_call_count=result.model_call_count,
+            tool_call_count=result.tool_call_count,
         )
+        self.last_initial_result = result
         return result
 
     def replan(
@@ -185,17 +207,25 @@ class StrandsRecoveryPlanningGateway:
         event: RecoveryEvent,
         scenario: DemoScenario,
     ) -> ReplanningResult:
-        recorder = ToolInvocationRecorder()
-        agent = build_recovery_agent(self._config, recorder)
         started = perf_counter()
         try:
-            result = process_external_event(
-                recovery_case=recovery_case,
-                event=event,
-                scenario=scenario,
-                agent=agent,
-                recorder=recorder,
-            )
+            if self._config.architecture is AgentArchitecture.MULTI:
+                result, self.last_replanning_brief = run_multi_agent_replanning(
+                    recovery_case=recovery_case,
+                    event=event,
+                    scenario=scenario,
+                    config=self._config,
+                )
+            else:
+                recorder = ToolInvocationRecorder()
+                agent = build_recovery_agent(self._config, recorder)
+                result = process_external_event(
+                    recovery_case=recovery_case,
+                    event=event,
+                    scenario=scenario,
+                    agent=agent,
+                    recorder=recorder,
+                )
         except Exception as exc:
             log_event(
                 "bedrock_invocation",
@@ -216,7 +246,11 @@ class StrandsRecoveryPlanningGateway:
             success=result.success,
             attempt_number=result.total_attempts,
             tools_used=result.tools_used,
+            architecture=result.architecture,
+            model_call_count=result.model_call_count,
+            tool_call_count=result.tool_call_count,
         )
+        self.last_replanning_result = result
         return result
 
 
@@ -250,7 +284,7 @@ class RecoveryApplicationService:
         started = perf_counter()
         try:
             planning = self._planning.plan_initial(disruption, scenario)
-        except ValueError as exc:
+        except Exception as exc:
             log_event(
                 "recovery_failed",
                 recovery_case_id=case_id,
@@ -278,10 +312,15 @@ class RecoveryApplicationService:
                 error_type="PlanningFailed",
             )
             raise PlanningFailed("DayMend could not produce a valid initial recovery plan.")
+        accepted_plan = self._accept_plan(
+            planning.final_plan,
+            case_id=case_id,
+            previous_plans=[],
+        )
         log_event(
             "planning_validated",
             recovery_case_id=case_id,
-            plan_id=planning.final_plan.plan_id,
+            plan_id=accepted_plan.plan_id,
             attempt_number=planning.total_attempts,
             duration_ms=_duration_ms(started),
             model_id=planning.model_id,
@@ -302,7 +341,7 @@ class RecoveryApplicationService:
         recovery_case = create_active_recovery_case(
             case_id=case_id,
             disruption=disruption,
-            validated_plan=planning.final_plan,
+            validated_plan=accepted_plan,
             required_coverage=scenario.required_coverage,
             now=now,
         ).model_copy(
@@ -381,6 +420,8 @@ class RecoveryApplicationService:
                 issue_count=len(attempt.validation.issues),
             )
 
+        if result.success:
+            result = self._accept_replanning_result(recovery_case, result)
         replanned = self.repository.save(
             result.recovery_case,
             expected_version=recovery_case.version,
@@ -523,6 +564,70 @@ class RecoveryApplicationService:
                 error_type="CompletionVerificationFailed",
             )
         return completion.recovery_case
+
+    @staticmethod
+    def _accept_plan(
+        plan: RecoveryPlan,
+        *,
+        case_id: str,
+        previous_plans: list[RecoveryPlan],
+    ) -> RecoveryPlan:
+        """Replace an untrusted proposal ID when a valid plan enters durable history."""
+
+        used_ids = {previous.plan_id for previous in previous_plans}
+        sequence = len(previous_plans) + 1
+        lifecycle_id = f"{case_id}:plan:{sequence}"
+        while lifecycle_id in used_ids:
+            sequence += 1
+            lifecycle_id = f"{case_id}:plan:{sequence}"
+        return materialize_caregiver_assumptions(plan.model_copy(update={"plan_id": lifecycle_id}))
+
+    def _accept_replanning_result(
+        self,
+        prior_case: RecoveryCase,
+        result: ReplanningResult,
+    ) -> ReplanningResult:
+        """Normalize the one accepted Plan B without promoting rejected attempts."""
+
+        assert result.final_plan is not None
+        accepted_plan = self._accept_plan(
+            result.final_plan,
+            case_id=prior_case.case_id,
+            previous_plans=result.recovery_case.previous_plans,
+        )
+        transient_ids = {assumption.assumption_id for assumption in result.final_plan.assumptions}
+        preexisting_ids = {assumption.assumption_id for assumption in prior_case.assumptions}
+        retained_assumptions = [
+            assumption
+            for assumption in result.recovery_case.assumptions
+            if assumption.assumption_id not in transient_ids
+            or assumption.assumption_id in preexisting_ids
+        ]
+        retained_ids = {assumption.assumption_id for assumption in retained_assumptions}
+        assumptions = [
+            *retained_assumptions,
+            *[
+                assumption
+                for assumption in accepted_plan.assumptions
+                if assumption.assumption_id not in retained_ids
+            ],
+        ]
+        accepted_case = result.recovery_case.model_copy(
+            update={
+                "active_recovery_plan": accepted_plan,
+                "assumptions": assumptions,
+            }
+        )
+        accepted_validation = result.final_validation.model_copy(
+            update={"validated_plan": accepted_plan}
+        )
+        return result.model_copy(
+            update={
+                "final_plan": accepted_plan,
+                "final_validation": accepted_validation,
+                "recovery_case": accepted_case,
+            }
+        )
 
     def _scenario_for(self, recovery_case: RecoveryCase) -> DemoScenario:
         scenario = self._scenario_factory()

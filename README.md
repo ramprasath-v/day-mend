@@ -85,6 +85,17 @@ restored the same version-6 case after a full page reload. App Runner streams sa
 lifecycle and Bedrock telemetry to CloudWatch. AgentCore was seriously evaluated and not
 deployed; the exact boundary decision is in [`docs/deployment.md`](docs/deployment.md).
 
+**Milestone 6.5A — COMPLETE LOCALLY, NOT DEPLOYED.** An opt-in
+`DAYMEND_AGENT_ARCHITECTURE=multi` path now separates recovery-level orchestration from
+constraint planning. A real Strands Recovery Orchestrator turns authoritative disruption or
+world-change state into a transient `PlanningBrief`; a separate real Strands Constraint Planner
+uses the five context tools and owns `RecoveryPlan` proposal plus validator-feedback repair. A
+live Nova Pro lifecycle produced valid Plan A, deterministically invalidated Grandma's affected
+assumption, preserved five segments, produced valid `$114` Plan B within the unchanged
+three-proposal cap, approved it, completed six simulated actions, and reached deterministic
+`RESOLVED` on the same case at version 6. Production and the default remain `single` pending a
+separate deployment decision.
+
 These are deliberately separate mechanisms:
 
 - **Initial-plan repair:** a draft was never valid; world state is unchanged; validator findings
@@ -210,6 +221,17 @@ persistence if a fresh model session does not produce a valid Plan A or Plan B.
 The smoke output contains the configured model ID, tools used, proposal and validation summaries
 for each attempt, and the final safety/cost/autonomy result. It does not expose model
 chain-of-thought.
+
+Run the local opt-in two-agent lifecycle proof without changing the deployed architecture:
+
+```bash
+DAYMEND_AGENT_ARCHITECTURE=multi \
+DAYMEND_BEDROCK_MODEL_ID=amazon.nova-pro-v1:0 \
+AWS_REGION=us-east-1 \
+uv run python -m app.agent.multi_agent_demo
+```
+
+Omitting `DAYMEND_AGENT_ARCHITECTURE` deliberately retains the proven single-agent path.
 
 Run the offline tests and quality checks:
 
