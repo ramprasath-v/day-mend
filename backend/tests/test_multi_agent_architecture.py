@@ -273,8 +273,11 @@ def test_single_agent_remains_the_deliberate_default(monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("DAYMEND_AGENT_ARCHITECTURE", "multi")
     assert RecoveryAgentConfig.from_environment().architecture is AgentArchitecture.MULTI
 
+    monkeypatch.setenv("DAYMEND_AGENT_ARCHITECTURE", "multi_research")
+    assert RecoveryAgentConfig.from_environment().architecture is AgentArchitecture.MULTI_RESEARCH
+
     monkeypatch.setenv("DAYMEND_AGENT_ARCHITECTURE", "unknown")
-    with pytest.raises(ValueError, match="must be 'single' or 'multi'"):
+    with pytest.raises(ValueError, match="multi_research"):
         RecoveryAgentConfig.from_environment()
 
 

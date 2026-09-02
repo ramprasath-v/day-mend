@@ -6,6 +6,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from app.models import (
+    BackupCareCandidate,
     CalendarEvent,
     Caregiver,
     CoverageWindow,
@@ -37,6 +38,8 @@ class DemoScenario:
     caregivers: tuple[Caregiver, ...]
     preferences: FamilyPreferences
     policy: FamilyPolicy
+    child_age_years: int = 4
+    backup_care_candidates: tuple[BackupCareCandidate, ...] = ()
 
 
 def get_demo_scenario() -> DemoScenario:

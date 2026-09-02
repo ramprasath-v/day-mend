@@ -18,7 +18,7 @@ from app.models import (
     RecoveryPlanSegment,
     RecoveryStatus,
 )
-from app.services import InvalidationOutcome
+from app.services import InvalidationOutcome, RecoveryNeed
 from app.tools import get_childcare_schedule, use_scenario
 
 
@@ -57,6 +57,11 @@ class PlanningBrief(ContractModel):
     excluded_caregiver_ids: list[str] = Field(default_factory=list)
     relevant_constraint_categories: list[ConstraintCategory] = Field(min_length=1)
     planner_directives: list[str] = Field(default_factory=list, max_length=8)
+    known_options_insufficient: bool = False
+    unresolved_known_option_windows: list[CoverageWindow] = Field(default_factory=list)
+    backup_research_needed: bool = False
+    researched_candidate_ids: list[str] = Field(default_factory=list)
+    recommended_backup_care_candidate_id: str | None = None
 
 
 class RecoveryOrchestratorLike(Protocol):
@@ -88,6 +93,11 @@ code supplies deterministic impact facts for replanning: affected windows, prese
 and excluded caregivers. Treat those facts as authoritative. Decide the planning focus, identify
 which constraint categories matter, and give concise planner directives that preserve still-valid
 work where feasible.
+
+When application-supplied interval analysis explicitly reports known_options_insufficient=true
+and provides unresolved_known_option_windows, set backup_research_needed=true so the application
+can invoke the Backup Care Research Agent. Never request research when the authoritative signal
+says known options are sufficient. Do not choose or invent provider candidates yourself.
 
 You do not construct a RecoveryPlan, calculate final cost, validate feasibility, authorize
 spending, mutate world state, persist data, execute actions, or mark a case RESOLVED. Do not expose
@@ -124,6 +134,7 @@ def create_initial_planning_brief(
     recorder: ToolInvocationRecorder,
     disruption: str,
     scenario: DemoScenario,
+    recovery_need: RecoveryNeed | None = None,
 ) -> OrchestratorResult:
     """Ask the Orchestrator to scope a new childcare-recovery objective."""
 
@@ -131,6 +142,9 @@ def create_initial_planning_brief(
         "planning_mode": PlanningMode.INITIAL,
         "disruption": disruption,
         "authoritative_required_coverage": scenario.required_coverage.model_dump(mode="json"),
+        "known_option_recovery_need": (
+            recovery_need.model_dump(mode="json") if recovery_need is not None else None
+        ),
     }
     return _invoke_orchestrator(
         orchestrator=orchestrator,
@@ -152,7 +166,16 @@ def create_initial_planning_brief(
             "affected_windows": [scenario.required_coverage],
             "preserved_segments": [],
             "excluded_caregiver_ids": [],
+            "known_options_insufficient": (
+                recovery_need.known_options_insufficient if recovery_need is not None else False
+            ),
+            "unresolved_known_option_windows": (
+                recovery_need.requested_windows if recovery_need is not None else []
+            ),
+            "researched_candidate_ids": [],
+            "recommended_backup_care_candidate_id": None,
         },
+        recovery_need=recovery_need,
     )
 
 
@@ -207,6 +230,11 @@ def create_replanning_brief(
             "affected_windows": list(outcome.uncovered_windows),
             "preserved_segments": list(outcome.preserved_segments),
             "excluded_caregiver_ids": [event.caregiver_id] if event.caregiver_id else [],
+            "known_options_insufficient": False,
+            "unresolved_known_option_windows": [],
+            "backup_research_needed": False,
+            "researched_candidate_ids": [],
+            "recommended_backup_care_candidate_id": None,
         },
     )
 
@@ -218,6 +246,7 @@ def _invoke_orchestrator(
     scenario: DemoScenario,
     prompt: str,
     authoritative_updates: dict[str, Any],
+    recovery_need: RecoveryNeed | None = None,
 ) -> OrchestratorResult:
     tools_before = len(recorder.tool_names)
     with use_scenario(scenario):
@@ -227,6 +256,13 @@ def _invoke_orchestrator(
     brief = result.structured_output.model_copy(update=authoritative_updates)
     if not brief.planning_required:
         raise RuntimeError("Recovery Orchestrator declined required childcare planning")
+    if recovery_need is not None:
+        if recovery_need.research_needed and not brief.backup_research_needed:
+            raise RuntimeError(
+                "Recovery Orchestrator did not request research for an unresolved known-options gap"
+            )
+        if not recovery_need.research_needed:
+            brief = brief.model_copy(update={"backup_research_needed": False})
     return OrchestratorResult(
         brief=brief,
         model_call_count=model_call_count(result),

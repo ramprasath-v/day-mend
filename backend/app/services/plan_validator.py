@@ -14,6 +14,7 @@ from app.models import (
     CoverageSource,
     CoverageWindow,
     FamilyPreferences,
+    PlanApprovalReason,
     PlanValidationState,
     RecoveryPlan,
     RecoveryPlanSegment,
@@ -92,12 +93,33 @@ class PlanValidator:
         )
 
         # Autonomy: spending affects future execution authority, never feasibility.
-        requires_approval = total_cost > scenario.policy.automatic_spend_limit
-        if requires_approval:
+        approval_reasons: list[PlanApprovalReason] = []
+        if total_cost > scenario.policy.automatic_spend_limit:
+            approval_reasons.append(PlanApprovalReason.COST_ABOVE_AUTOMATIC_LIMIT)
             warnings.append(
                 "Plan cost exceeds the automatic-spend limit and would require approval "
                 "before execution."
             )
+        uses_unfamiliar_paid_caregiver = any(
+            segment.source is CoverageSource.CAREGIVER
+            and (caregiver := caregivers.get(segment.assigned_person_id)) is not None
+            and caregiver.external_provider
+            and not caregiver.known_to_family
+            and (
+                (caregiver.hourly_rate is not None and caregiver.hourly_rate > 0)
+                or (caregiver.flat_rate is not None and caregiver.flat_rate > 0)
+            )
+            for segment in deterministic_segments
+        )
+        if (
+            scenario.policy.require_approval_for_unfamiliar_paid_caregiver
+            and uses_unfamiliar_paid_caregiver
+        ):
+            approval_reasons.append(PlanApprovalReason.UNFAMILIAR_PAID_CAREGIVER)
+            warnings.append(
+                "Plan uses an unfamiliar paid caregiver and requires approval before execution."
+            )
+        requires_approval = bool(approval_reasons)
 
         errors = [issue.message for issue in issues]
         validation_state = PlanValidationState.INVALID if issues else PlanValidationState.VALID
@@ -107,6 +129,7 @@ class PlanValidator:
                 "estimated_cost": total_cost,
                 "validation_state": validation_state,
                 "validation_errors": errors.copy(),
+                "approval_reasons": approval_reasons,
             }
         )
         return PlanValidationResult(

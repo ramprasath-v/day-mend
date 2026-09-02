@@ -81,7 +81,7 @@ class RecoveryExecutionService:
             raise WorkflowInvariantError("execution is blocked by pending approval")
         if recovery_case.status is not RecoveryStatus.EXECUTING:
             raise WorkflowInvariantError(f"case status {recovery_case.status} cannot execute")
-        if plan.estimated_cost > policy.automatic_spend_limit and not any(
+        if plan.approval_reasons and not any(
             approval.status is ApprovalStatus.APPROVED and approval.plan_id == plan.plan_id
             for approval in recovery_case.approval_history
         ):

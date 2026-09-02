@@ -1,4 +1,4 @@
-"""DayMend's stable single-agent and opt-in two-agent planning architectures."""
+"""Stable fallback plus opt-in two- and three-agent recovery architectures."""
 
 from app.agent.recovery_agent import (
     MAX_PLAN_ATTEMPTS,

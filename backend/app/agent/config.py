@@ -12,6 +12,7 @@ class AgentArchitecture(StrEnum):
 
     SINGLE = "single"
     MULTI = "multi"
+    MULTI_RESEARCH = "multi_research"
 
 
 @dataclass(frozen=True)
@@ -30,7 +31,9 @@ class RecoveryAgentConfig:
         try:
             resolved_architecture = AgentArchitecture(architecture.lower())
         except ValueError as exc:
-            raise ValueError("DAYMEND_AGENT_ARCHITECTURE must be 'single' or 'multi'") from exc
+            raise ValueError(
+                "DAYMEND_AGENT_ARCHITECTURE must be 'single', 'multi', or 'multi_research'"
+            ) from exc
         return cls(
             model_id=os.getenv("DAYMEND_BEDROCK_MODEL_ID", DEFAULT_BEDROCK_MODEL_ID),
             region_name=os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION"),

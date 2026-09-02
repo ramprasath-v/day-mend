@@ -10,6 +10,7 @@ from app.models import (
     ApprovalType,
     ContractModel,
     FamilyPolicy,
+    PlanApprovalReason,
     RecoveryCase,
     RecoveryEvent,
     RecoveryEventType,
@@ -66,9 +67,10 @@ class ApprovalService:
             raise WorkflowInvariantError("only a deterministically valid active plan may proceed")
         if validation.validated_plan.plan_id != plan.plan_id:
             raise WorkflowInvariantError("validation does not apply to the active plan")
-        if validation.requires_approval != (
-            validation.deterministic_total_cost > policy.automatic_spend_limit
-        ):
+        expected_reasons = set(validation.validated_plan.approval_reasons)
+        if validation.deterministic_total_cost > policy.automatic_spend_limit:
+            expected_reasons.add(PlanApprovalReason.COST_ABOVE_AUTOMATIC_LIMIT)
+        if validation.requires_approval != bool(expected_reasons):
             raise WorkflowInvariantError("approval requirement disagrees with deterministic policy")
 
         if not validation.requires_approval:
@@ -97,15 +99,32 @@ class ApprovalService:
                 approval_request=pending,
             )
 
+        reasons = validation.validated_plan.approval_reasons
+        unfamiliar = PlanApprovalReason.UNFAMILIAR_PAID_CAREGIVER in reasons
+        over_limit = PlanApprovalReason.COST_ABOVE_AUTOMATIC_LIMIT in reasons
+        if unfamiliar and over_limit:
+            reason = (
+                f"Deterministic plan cost {validation.deterministic_total_cost} exceeds the "
+                f"automatic-spend limit {policy.automatic_spend_limit}, and the plan uses an "
+                "unfamiliar paid caregiver."
+            )
+        elif unfamiliar:
+            reason = "The valid plan uses an unfamiliar paid caregiver requiring human approval."
+        else:
+            reason = (
+                f"Deterministic plan cost {validation.deterministic_total_cost} exceeds the "
+                f"automatic-spend limit {policy.automatic_spend_limit}."
+            )
         approval = ApprovalRequest(
             approval_id=self._id_factory(),
             recovery_case_id=recovery_case.case_id,
-            approval_type=ApprovalType.SPEND_ABOVE_AUTONOMY_LIMIT,
-            plan_id=plan.plan_id,
-            reason=(
-                f"Deterministic plan cost {validation.deterministic_total_cost} exceeds the "
-                f"automatic-spend limit {policy.automatic_spend_limit}."
+            approval_type=(
+                ApprovalType.UNFAMILIAR_PAID_CAREGIVER
+                if unfamiliar and not over_limit
+                else ApprovalType.SPEND_ABOVE_AUTONOMY_LIMIT
             ),
+            plan_id=plan.plan_id,
+            reason=reason,
             summary="Paid backup care is needed to preserve today's critical commitments.",
             consequence="Approving permits simulated execution of the active recovery plan.",
             requested_at=now,

@@ -386,3 +386,52 @@ Neither agent owns exact cost, validity, approval, persistence, execution, or co
 `DAYMEND_AGENT_ARCHITECTURE=single` is the default and retains the deployed path;
 `DAYMEND_AGENT_ARCHITECTURE=multi` enables the local proof. No frontend/API contract or DynamoDB
 schema changed. AgentCore and backup-care research remain outside this milestone.
+
+## Milestone 6.5B local backup-care research architecture
+
+Milestone 6.5B preserves `single` and the exact two-agent `multi` path. The opt-in
+`multi_research` path contains exactly three reasoning roles:
+
+```text
+Recovery Orchestrator Agent
+  → deterministic known-option interval analysis
+      → sufficient: Constraint Planner Agent
+      → insufficient: Backup Care Research Agent
+          → search_backup_care (synthetic structured inventory)
+          → grounded ranked recommendation
+  → Constraint Planner Agent with recommended provider in authoritative context
+  → unchanged PlanValidator (maximum 3 proposals)
+  → deterministic approval → simulated execution → CompletionVerifier
+```
+
+The third role is justified by a durable multi-attribute comparison responsibility. The
+Research Agent compares every eligible candidate across price, distance, rating, review count,
+prior use, and family preferences; it is not a wrapper that returns the first search result. It
+has only `search_backup_care`. The Orchestrator cannot search providers, and the Planner cannot
+invoke research.
+
+The provider inventory contains six synthetic records with deliberately competing attributes.
+Application code filters full requested-window availability, required verification, required
+background check, and child-age support. Those are hard eligibility facts. Eligible candidates
+retain soft differences for model ranking. The research contract contains requested windows,
+considered/eligible IDs, a complete ranking, concise fit/tradeoffs, a recommended grounded ID,
+and unresolved windows. It contains no plan-validity or approval decision. Application code
+rejects rankings or recommendations outside the eligible tool result.
+
+The selected candidate is converted to authoritative `Caregiver` context before planning and is
+stored in internal `RecoveryCase.context_state` so later validation and completion can rebuild
+the same world state. `PlanValidator` overwrites model-proposed autonomy metadata with durable
+approval reasons. A valid plan requires approval when cost exceeds the automatic limit, when it
+uses an unfamiliar paid external caregiver under configured policy, or both. Approval,
+execution, and completion enforce the accepted application-owned plan ID.
+
+The successful live run used one Orchestrator invocation, one Research invocation/tool call, and
+two Planner invocations (context plus one accepted proposal), totaling seven Bedrock cycles.
+Observed role latency was 7,110 ms Orchestrator, 29,810 ms Research, and 16,650 ms Planner;
+end-to-end latency was 53,952 ms. The older 6.5A proof did not retain exact per-role latency or
+Bedrock-cycle totals, so an exact numerical delta is not claimed. Structurally, 6.5B adds one
+conditional Research invocation and one research tool call; when known options are sufficient,
+both remain zero.
+
+No frontend, public API response, production infrastructure, deployment configuration,
+marketplace integration, or AgentCore component changed. Production still runs `single`.

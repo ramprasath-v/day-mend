@@ -124,6 +124,9 @@ def get_caregivers() -> dict[str, Any]:
                 else None,
                 "flat_rate": str(caregiver.flat_rate) if caregiver.flat_rate is not None else None,
                 "handoff_buffer_minutes": caregiver.handoff_buffer_minutes,
+                "known_to_family": caregiver.known_to_family,
+                "previously_used": caregiver.previously_used,
+                "external_provider": caregiver.external_provider,
             }
             for caregiver in scenario.caregivers
         ],

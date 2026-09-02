@@ -129,6 +129,38 @@ second live run.
 live same-case lifecycle reaches deterministic `RESOLVED`; single-agent fallback, validator rules,
 retry cap, approval, execution, and completion remain unchanged.
 
+## Milestone 6.5B — Backup care research
+
+**Goal:** Add the third and final reasoning role only for recovery gaps that current known options
+cannot cover, while retaining deterministic eligibility, validation, approval, and completion.
+
+**Status:** Complete locally; not deployed. `multi_research` adds a real Strands Backup Care
+Research Agent with only the `search_backup_care` tool. A dedicated fixture leaves 10:00–12:00
+uncovered after considering both parents and known caregivers. Deterministic search evaluates six
+synthetic provider records and exposes three eligible candidates for meaningful soft-preference
+ranking. Grounding checks reject invented or omitted eligible IDs before the recommendation can
+reach the Constraint Planner.
+
+The one controlled Nova Pro lifecycle used case
+`daymend-research-f98e0e7b-f47f-45d3-8485-9627c77bc9ef`. The Research Agent ranked
+`harbor_nanny_coop`, `willow_family_care`, and `bright_start_agency`, recommending
+`harbor_nanny_coop`. The Planner's first proposal passed unchanged `PlanValidator` at `$142`.
+Application code assigned
+`daymend-research-f98e0e7b-f47f-45d3-8485-9627c77bc9ef:plan:1`; deterministic policy requested
+approval for above-limit cost and unfamiliar paid care. Approval resumed the same case, all
+three simulated reservations succeeded, and `CompletionVerifier` set `RESOLVED` at version 5.
+
+The run recorded one Orchestrator invocation, one Research Agent invocation, one research tool
+call, two Planner invocations, seven total Bedrock cycles, and 53,952 ms total latency. Role
+latencies were 7,110 ms, 29,810 ms, and 16,650 ms respectively. The prior 6.5A run did not retain
+exact role/cycle timing, so the honest architectural comparison is one additional conditional
+research role and tool call, with zero research overhead on sufficient known-option scenarios.
+
+**Exit criterion:** Exactly three specialized Strands roles participate when research is needed;
+hard eligibility and approval remain deterministic; grounded researched care reaches a valid
+accepted plan and verified completion; `single` and `multi` regressions remain green; production
+and AgentCore remain unchanged.
+
 ## Milestone 7 — Submission polish
 
 **Goal:** Prepare the architecture diagram, README, tests, public repository, license, demo

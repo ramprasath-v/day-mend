@@ -165,3 +165,37 @@ active plan/case state, affected window, preserved segments, and Grandma exclusi
 on proposal 3 at `$114`; deterministic policy requested and recorded approval. Six simulated
 actions succeeded, final coverage verification passed, and the same case reached `RESOLVED` at
 version 6. This path is not deployed and the single-agent architecture remains the default.
+
+## Milestone 6.5B local research-agent boundary
+
+The dedicated research fixture begins with a nanny unavailable from 08:00–16:00. Grandma can
+cover 08:00–10:00 and a known backup sitter can cover 12:00–16:00, while both parents have
+critical commitments from 10:00–12:00. Deterministic union-of-availability analysis therefore
+establishes a real two-hour gap without checking any caregiver name or wasting three impossible
+Planner proposals.
+
+The Recovery Orchestrator receives that authoritative need and requests research. The Backup
+Care Research Agent calls one read-only tool over six synthetic records. Deterministic rules
+remove one unavailable candidate, one candidate without the required background check, and one
+whose age range does not cover the child. Nova Pro compares all three remaining options and
+returns this grounded ranking:
+
+1. `harbor_nanny_coop` — recommended for the balance of 4.9 rating, `$27/hour`, and 2.2 miles.
+2. `willow_family_care` — closer at 1.2 miles but more expensive at `$31/hour` and fewer reviews.
+3. `bright_start_agency` — largest review history and exact-window availability, but farther away
+   with a `$58` flat rate.
+
+The Planner sees only the recommended provider added to authoritative caregiver context and
+constructs the entire day. In the controlled live run, proposal 1 covered the full window and
+passed deterministic validation with no issue codes. The `$142` total includes known afternoon
+care as well as researched care. Policy independently required one approval because the plan was
+both above the `$30` automatic threshold and used unfamiliar paid care. The approval referenced
+the system ID
+`daymend-research-f98e0e7b-f47f-45d3-8485-9627c77bc9ef:plan:1`.
+
+All three simulated caregiver actions succeeded. `CompletionVerifier` rebuilt the researched
+candidate from internal case context, revalidated coverage and authorization, and set the same
+case to `RESOLVED` at version 5. The lifecycle used seven Bedrock cycles and took 53,952 ms:
+7,110 ms Orchestrator, 29,810 ms Research, and 16,650 ms Planner. No raw prompts or hidden
+reasoning are recorded. There is no real provider marketplace, search scraping, booking, payment,
+frontend change, production deployment change, or AgentCore implementation.

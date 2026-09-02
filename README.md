@@ -96,6 +96,26 @@ three-proposal cap, approved it, completed six simulated actions, and reached de
 `RESOLVED` on the same case at version 6. Production and the default remain `single` pending a
 separate deployment decision.
 
+**Milestone 6.5B — COMPLETE LOCALLY, NOT DEPLOYED.** A separate
+`DAYMEND_AGENT_ARCHITECTURE=multi_research` mode adds the third and final reasoning role: a real
+Strands Backup Care Research Agent. Deterministic interval analysis invokes it only when known
+family options cannot cover a required window. Its only tool searches six realistic but fully
+synthetic provider records, deterministically removes hard-ineligible candidates, and leaves
+price, distance, rating, reviews, and prior-use tradeoffs for grounded model ranking. The
+recommended candidate enters authoritative Planner/Validator context; deterministic policy—not
+the Research Agent—requires approval for unfamiliar paid care and/or cost above the automatic
+limit.
+
+The controlled Nova Pro proof resolved case
+`daymend-research-f98e0e7b-f47f-45d3-8485-9627c77bc9ef`. Known options left 10:00–12:00
+uncovered. Research considered six candidates, ranked three eligible candidates, and recommended
+`harbor_nanny_coop`. The Planner produced a valid `$142` plan on proposal 1, application code
+assigned `<case>:plan:1`, one approval authorized both consequential reasons, three simulated
+actions succeeded, and deterministic completion set `RESOLVED` at version 5. This is not a
+marketplace integration: provider data is synthetic; Strands reasoning/ranking, validation,
+approval, persistence behavior, and completion are real. Production remains unchanged on
+`single`, and AgentCore remains unimplemented.
+
 These are deliberately separate mechanisms:
 
 - **Initial-plan repair:** a draft was never valid; world state is unchanged; validator findings
@@ -232,6 +252,18 @@ uv run python -m app.agent.multi_agent_demo
 ```
 
 Omitting `DAYMEND_AGENT_ARCHITECTURE` deliberately retains the proven single-agent path.
+
+Run the dedicated three-agent research lifecycle against the synthetic provider fixture:
+
+```bash
+DAYMEND_AGENT_ARCHITECTURE=multi_research \
+DAYMEND_BEDROCK_MODEL_ID=amazon.nova-pro-v1:0 \
+AWS_REGION=us-east-1 \
+uv run python -m app.agent.backup_care_demo
+```
+
+This command performs one controlled lifecycle. It does not retry a failed live run beyond the
+existing three-proposal Planner cap and prints only safe structured diagnostics.
 
 Run the offline tests and quality checks:
 

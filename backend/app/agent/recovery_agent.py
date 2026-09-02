@@ -12,7 +12,13 @@ from strands.models import BedrockModel
 from app.agent.config import RecoveryAgentConfig
 from app.agent.instructions import RECOVERY_AGENT_INSTRUCTIONS
 from app.fixtures import DemoScenario, get_demo_scenario
-from app.models import ContractModel, PlanValidationState, RecoveryPlan
+from app.models import (
+    BackupCareCandidate,
+    ContractModel,
+    CoverageWindow,
+    PlanValidationState,
+    RecoveryPlan,
+)
 from app.services import PlanValidationIssue, PlanValidationResult, PlanValidator
 from app.tools import RECOVERY_CONTEXT_TOOLS, use_scenario
 
@@ -37,13 +43,14 @@ class ToolInvocationRecorder:
 
     tool_names: list[str] = field(default_factory=list)
     _tool_use_ids: set[str] = field(default_factory=set)
+    allowed_tool_names: set[str] = field(default_factory=lambda: RECOVERY_CONTEXT_TOOL_NAMES.copy())
 
     def __call__(self, **event: Any) -> None:
         tool_use = event.get("current_tool_use")
         if not isinstance(tool_use, dict) or not tool_use.get("name"):
             return
         tool_name = str(tool_use["name"])
-        if tool_name not in RECOVERY_CONTEXT_TOOL_NAMES:
+        if tool_name not in self.allowed_tool_names:
             return
         tool_use_id = str(tool_use.get("toolUseId", ""))
         if tool_use_id and tool_use_id in self._tool_use_ids:
@@ -79,6 +86,13 @@ class InitialPlanningResult(ContractModel):
     planner_invocation_count: int = Field(default=0, ge=0)
     model_call_count: int = Field(default=0, ge=0)
     tool_call_count: int = Field(default=0, ge=0)
+    research_agent_invocation_count: int = Field(default=0, ge=0)
+    research_tool_call_count: int = Field(default=0, ge=0)
+    orchestrator_duration_ms: int = Field(default=0, ge=0)
+    research_duration_ms: int = Field(default=0, ge=0)
+    planner_duration_ms: int = Field(default=0, ge=0)
+    known_options_uncovered_windows: list[CoverageWindow] = Field(default_factory=list)
+    researched_candidate: BackupCareCandidate | None = None
 
 
 def build_recovery_agent(

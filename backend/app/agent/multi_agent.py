@@ -189,10 +189,11 @@ def _log_planner_result(
     mode: str,
     started: float,
     case_id: str | None = None,
+    architecture: str = "multi",
 ) -> None:
     for attempt in planning.attempts:
         fields = {
-            "architecture": "multi",
+            "architecture": architecture,
             "agent_role": "constraint_planner",
             "planning_mode": mode,
             "recovery_case_id": case_id,
@@ -212,7 +213,7 @@ def _log_planner_result(
         )
     log_event(
         "planner_invocation_completed",
-        architecture="multi",
+        architecture=architecture,
         agent_role="constraint_planner",
         planning_mode=mode,
         recovery_case_id=case_id,

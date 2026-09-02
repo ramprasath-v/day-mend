@@ -73,6 +73,22 @@ class ApprovalType(StrEnum):
     """Consequential action categories that may cross an autonomy boundary."""
 
     SPEND_ABOVE_AUTONOMY_LIMIT = "SPEND_ABOVE_AUTONOMY_LIMIT"
+    UNFAMILIAR_PAID_CAREGIVER = "UNFAMILIAR_PAID_CAREGIVER"
+
+
+class PlanApprovalReason(StrEnum):
+    """Deterministic reasons a valid plan still requires human permission."""
+
+    COST_ABOVE_AUTOMATIC_LIMIT = "COST_ABOVE_AUTOMATIC_LIMIT"
+    UNFAMILIAR_PAID_CAREGIVER = "UNFAMILIAR_PAID_CAREGIVER"
+
+
+class BackupCareProviderType(StrEnum):
+    """Synthetic provider categories available to backup-care research."""
+
+    INDEPENDENT_CAREGIVER = "INDEPENDENT_CAREGIVER"
+    LOCAL_AGENCY = "LOCAL_AGENCY"
+    EMPLOYER_NETWORK = "EMPLOYER_NETWORK"
 
 
 class ExecutionActionType(StrEnum):
@@ -126,6 +142,9 @@ class Caregiver(ContractModel):
     hourly_rate: Decimal | None = Field(default=None, ge=0)
     flat_rate: Decimal | None = Field(default=None, ge=0)
     handoff_buffer_minutes: int = Field(default=0, ge=0)
+    known_to_family: bool = True
+    previously_used: bool = False
+    external_provider: bool = False
 
     @model_validator(mode="after")
     def has_at_most_one_price_type(self) -> "Caregiver":
@@ -143,6 +162,11 @@ class FamilyPreferences(ContractModel):
     avoid_rescheduling_customer_meetings: bool = False
     preferred_backup_order: list[str] = Field(default_factory=list)
     preferred_handoff_location: str | None = None
+    prefer_closer_backup_care: bool = False
+    prefer_lower_backup_care_cost: bool = False
+    preferred_minimum_provider_rating: Decimal | None = Field(default=None, ge=0, le=5)
+    prefer_meaningful_review_history: bool = False
+    prefer_previously_used_provider: bool = False
 
 
 class FamilyPolicy(ContractModel):
@@ -160,6 +184,9 @@ class FamilyPolicy(ContractModel):
     )
     currency: str = Field(default="USD", min_length=3, max_length=3)
     minimum_handoff_minutes: int = Field(default=0, ge=0)
+    require_verified_backup_provider: bool = False
+    require_background_checked_backup_provider: bool = False
+    require_approval_for_unfamiliar_paid_caregiver: bool = False
 
 
 class CoverageSource(StrEnum):
@@ -177,6 +204,37 @@ class RecoveryPlanSegment(ContractModel):
     assigned_person_id: str
     source: CoverageSource
     estimated_cost: Decimal = Field(default=Decimal("0"), ge=0)
+
+
+class BackupCareCandidate(ContractModel):
+    """One synthetic provider record available to grounded backup-care research."""
+
+    candidate_id: str
+    display_name: str
+    provider_type: BackupCareProviderType
+    availability: list[CoverageWindow] = Field(default_factory=list)
+    hourly_rate: Decimal | None = Field(default=None, ge=0)
+    flat_rate: Decimal | None = Field(default=None, ge=0)
+    distance_miles: Decimal = Field(ge=0)
+    rating: Decimal = Field(ge=0, le=5)
+    review_count: int = Field(ge=0)
+    verified: bool
+    background_checked: bool
+    minimum_child_age: int = Field(ge=0)
+    maximum_child_age: int = Field(ge=0)
+    known_to_family: bool = False
+    previously_used: bool = False
+    source: str
+
+    @model_validator(mode="after")
+    def candidate_contract_is_consistent(self) -> "BackupCareCandidate":
+        if self.hourly_rate is not None and self.flat_rate is not None:
+            raise ValueError("backup-care candidate cannot have both hourly and flat pricing")
+        if self.hourly_rate is None and self.flat_rate is None:
+            raise ValueError("backup-care candidate requires hourly or flat pricing")
+        if self.maximum_child_age < self.minimum_child_age:
+            raise ValueError("maximum_child_age must be at least minimum_child_age")
+        return self
 
 
 class PlanAssumption(ContractModel):
@@ -219,6 +277,7 @@ class RecoveryPlan(ContractModel):
     assumptions: list[PlanAssumption] = Field(default_factory=list)
     validation_state: PlanValidationState = PlanValidationState.NOT_VALIDATED
     validation_errors: list[str] = Field(default_factory=list)
+    approval_reasons: list[PlanApprovalReason] = Field(default_factory=list)
 
 
 class ApprovalRequest(ContractModel):

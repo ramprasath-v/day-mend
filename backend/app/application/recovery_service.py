@@ -20,8 +20,10 @@ from app.agent.recovery_agent import (
 )
 from app.agent.recovery_orchestrator import PlanningBrief
 from app.agent.replanning import ReplanningResult, process_external_event
+from app.agent.research_multi_agent import run_research_multi_agent_initial_planning
 from app.fixtures import DemoScenario, get_demo_scenario
 from app.models import (
+    BackupCareCandidate,
     CoverageWindow,
     RecoveryCase,
     RecoveryEvent,
@@ -36,6 +38,7 @@ from app.services import (
     CompletionVerifier,
     RecoveryExecutionService,
     WorkflowInvariantError,
+    add_researched_caregiver,
     apply_caregiver_decline_to_scenario,
     create_active_recovery_case,
     materialize_caregiver_assumptions,
@@ -156,11 +159,24 @@ class StrandsRecoveryPlanningGateway:
         self.last_replanning_brief: PlanningBrief | None = None
         self.last_initial_result: InitialPlanningResult | None = None
         self.last_replanning_result: ReplanningResult | None = None
+        self.last_backup_care_research = None
+        self.last_recovery_need = None
 
     def plan_initial(self, disruption: str, scenario: DemoScenario) -> InitialPlanningResult:
         started = perf_counter()
         try:
-            if self._config.architecture is AgentArchitecture.MULTI:
+            if self._config.architecture is AgentArchitecture.MULTI_RESEARCH:
+                (
+                    result,
+                    self.last_initial_brief,
+                    self.last_backup_care_research,
+                    self.last_recovery_need,
+                ) = run_research_multi_agent_initial_planning(
+                    disruption=disruption,
+                    scenario=scenario,
+                    config=self._config,
+                )
+            elif self._config.architecture is AgentArchitecture.MULTI:
                 result, self.last_initial_brief = run_multi_agent_initial_planning(
                     disruption=disruption,
                     scenario=scenario,
@@ -209,7 +225,10 @@ class StrandsRecoveryPlanningGateway:
     ) -> ReplanningResult:
         started = perf_counter()
         try:
-            if self._config.architecture is AgentArchitecture.MULTI:
+            if self._config.architecture in {
+                AgentArchitecture.MULTI,
+                AgentArchitecture.MULTI_RESEARCH,
+            }:
                 result, self.last_replanning_brief = run_multi_agent_replanning(
                     recovery_case=recovery_case,
                     event=event,
@@ -353,12 +372,44 @@ class RecoveryApplicationService:
                         "occurred_at": command.occurred_at.isoformat(),
                         "caregiver_id": command.caregiver_id,
                         "message": command.message,
-                    }
+                    },
+                    **(
+                        {
+                            "researched_backup_care_candidate": (
+                                planning.researched_candidate.model_dump(mode="json")
+                            )
+                        }
+                        if planning.researched_candidate is not None
+                        else {}
+                    ),
                 },
                 "family_policy": scenario.policy,
             }
         )
-        return self.repository.save(recovery_case)
+        saved = self.repository.save(recovery_case)
+        if planning.researched_candidate is None:
+            return saved
+
+        accepted_validation = planning.attempts[-1].validation.model_copy(
+            update={"validated_plan": accepted_plan}
+        )
+        gate = self._approval.apply_autonomy_gate(
+            saved,
+            accepted_validation,
+            scenario.policy,
+            now=self._now(saved.updated_at),
+        )
+        if gate.approval_required:
+            log_event(
+                "approval_requested",
+                recovery_case_id=case_id,
+                plan_id=accepted_plan.plan_id,
+                approval_id=gate.approval_request.approval_id,
+                cost=gate.approval_request.amount,
+                status=gate.recovery_case.status,
+            )
+            return gate.recovery_case
+        return self._execute_and_complete(case_id)
 
     def get_recovery(self, case_id: str) -> RecoveryCase:
         return self.repository.get(case_id)
@@ -631,6 +682,12 @@ class RecoveryApplicationService:
 
     def _scenario_for(self, recovery_case: RecoveryCase) -> DemoScenario:
         scenario = self._scenario_factory()
+        researched = recovery_case.context_state.get("researched_backup_care_candidate")
+        if researched is not None:
+            scenario = add_researched_caregiver(
+                scenario,
+                BackupCareCandidate.model_validate(researched),
+            )
         for event in recovery_case.events:
             if event.event_type is RecoveryEventType.CAREGIVER_DECLINED:
                 scenario = apply_caregiver_decline_to_scenario(scenario, event)
