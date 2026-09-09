@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from app.fixtures import DemoScenario, get_demo_scenario
+from app.fixtures import DemoScenario, get_legacy_demo_scenario
 from app.models import (
     CalendarEvent,
     Caregiver,
@@ -78,7 +78,7 @@ def valid_plan(*, proposed_cost: str = "0") -> RecoveryPlan:
 
 
 def validate(plan: RecoveryPlan, scenario: DemoScenario | None = None):
-    return PlanValidator().validate(plan, scenario or get_demo_scenario())
+    return PlanValidator().validate(plan, scenario or get_legacy_demo_scenario())
 
 
 def test_fully_covered_plan_is_valid() -> None:
@@ -107,7 +107,7 @@ def test_thirty_minute_uncovered_gap_is_invalid() -> None:
 
 
 def test_untrusted_caregiver_is_invalid_when_trust_is_required() -> None:
-    scenario = get_demo_scenario()
+    scenario = get_legacy_demo_scenario()
     caregivers = tuple(
         caregiver.model_copy(update={"is_trusted": False})
         if caregiver.caregiver_id == "employer_backup_care"
@@ -220,7 +220,7 @@ def test_inconsistent_overlap_is_invalid() -> None:
 
 
 def test_missing_required_handoff_buffer_is_invalid() -> None:
-    scenario = get_demo_scenario()
+    scenario = get_legacy_demo_scenario()
     policy = scenario.policy.model_copy(update={"minimum_handoff_minutes": 15})
 
     result = validate(valid_plan(), replace(scenario, policy=policy))
@@ -258,7 +258,7 @@ def test_soft_preference_violation_does_not_invalidate_plan() -> None:
 
 
 def test_unapproved_caregiver_policy_is_enforced_even_when_trust_not_required() -> None:
-    scenario = get_demo_scenario()
+    scenario = get_legacy_demo_scenario()
     untrusted = Caregiver(
         caregiver_id="unapproved_neighbor",
         name="Unapproved neighbor",
@@ -306,7 +306,7 @@ def test_spend_threshold_is_reported_without_implementing_approval_flow() -> Non
 
 
 def test_feasible_plan_below_spend_threshold_does_not_require_approval() -> None:
-    scenario = get_demo_scenario()
+    scenario = get_legacy_demo_scenario()
     caregivers = tuple(
         caregiver.model_copy(update={"flat_rate": Decimal("20")})
         if caregiver.caregiver_id == "employer_backup_care"

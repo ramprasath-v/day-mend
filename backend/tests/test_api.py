@@ -11,7 +11,7 @@ from app.agent.recovery_agent import InitialPlanningResult, PlanningAttempt
 from app.agent.replanning import ReplanningResult, process_external_event
 from app.api.dependencies import allowed_origins, build_recovery_repository
 from app.application import RecoveryApplicationService
-from app.fixtures import DemoScenario
+from app.fixtures import DemoScenario, get_legacy_demo_scenario
 from app.main import create_app
 from app.models import RecoveryCase, RecoveryEvent, RecoveryStatus
 from app.repositories import InMemoryRecoveryCaseRepository
@@ -83,12 +83,13 @@ def client(repository: InMemoryRecoveryCaseRepository) -> TestClient:
     ids: Iterator[str] = iter(["case-api-offline", "event-api-offline"])
     times: Iterator[datetime] = iter(
         [
-            at(7, 10),
             at(9, 10),
+            at(9, 11),
             at(9, 15),
             at(9, 16),
             at(9, 17),
             at(9, 18),
+            at(9, 19),
         ]
     )
     service = RecoveryApplicationService(
@@ -96,6 +97,7 @@ def client(repository: InMemoryRecoveryCaseRepository) -> TestClient:
         DeterministicPlanningGateway(),
         clock=lambda: next(times),
         id_factory=lambda: next(ids),
+        scenario_factory=get_legacy_demo_scenario,
     )
     return TestClient(create_app(service))
 
@@ -184,6 +186,11 @@ def test_caregiver_decline_replans_same_persisted_case(client: TestClient) -> No
     assert body["latest_trigger"] == "event:event-api-offline"
     assert len(body["invalidated_assumptions"]) == 1
     assert body["pending_approval"]["status"] == "PENDING"
+    decline = next(event for event in body["events"] if event["event_type"] == "CAREGIVER_DECLINED")
+    assert decline["occurred_at"] == at(9, 5).isoformat()
+    assert datetime.fromisoformat(body["timestamps"]["updated_at"]) >= datetime.fromisoformat(
+        body["timestamps"]["created_at"]
+    )
     persisted = client.get(f"/recoveries/{created['recovery_case_id']}").json()
     assert persisted == body
 

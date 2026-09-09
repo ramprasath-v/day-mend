@@ -21,6 +21,18 @@ def get_active_scenario() -> DemoScenario:
     return _ACTIVE_SCENARIO.get() or get_demo_scenario()
 
 
+def planner_context_snapshot(scenario: DemoScenario) -> dict[str, Any]:
+    """Return the five authoritative Planner tool results without invoking a model."""
+
+    return {
+        "get_childcare_schedule": _childcare_schedule(scenario),
+        "get_parent_calendars": _parent_calendars(scenario),
+        "get_caregivers": _caregivers(scenario),
+        "get_family_preferences": scenario.preferences.model_dump(mode="json"),
+        "get_family_policy": scenario.policy.model_dump(mode="json"),
+    }
+
+
 @contextmanager
 def use_scenario(scenario: DemoScenario) -> Iterator[None]:
     """Expose one authoritative scenario snapshot to every context tool in this context."""
@@ -40,7 +52,10 @@ def get_childcare_schedule() -> dict[str, Any]:
         JSON-serializable authoritative childcare schedule and unavailability facts.
     """
 
-    scenario = get_active_scenario()
+    return _childcare_schedule(get_active_scenario())
+
+
+def _childcare_schedule(scenario: DemoScenario) -> dict[str, Any]:
     return {
         "normal_caregiver_id": scenario.normal_caregiver_id,
         "coverage_required_from": scenario.required_coverage.start.isoformat(),
@@ -50,6 +65,10 @@ def get_childcare_schedule() -> dict[str, Any]:
         ),
         "disruption": scenario.disruption,
         "unavailable_caregiver_ids": list(scenario.unavailable_caregiver_ids),
+        "family_home_location_id": scenario.family_home_location_id,
+        "movement_rule": (
+            "Every change of location requires an explicit supervised TRANSPORT segment."
+        ),
     }
 
 
@@ -61,7 +80,11 @@ def get_parent_calendars() -> dict[str, Any]:
         JSON-serializable parent identifiers and calendar events for the recovery date.
     """
 
-    scenario = get_active_scenario()
+    return _parent_calendars(get_active_scenario())
+
+
+def _parent_calendars(scenario: DemoScenario) -> dict[str, Any]:
+    transport_by_parent = {item.parent_id: item for item in scenario.parent_transport_capabilities}
     return {
         "calendar_assignment_rule": (
             "A parent segment cannot overlap an event with critical=true or movable=false. "
@@ -70,6 +93,11 @@ def get_parent_calendars() -> dict[str, Any]:
         "parents": [
             {
                 "parent_id": parent_id,
+                "transport": (
+                    transport_by_parent[parent_id].model_dump(mode="json")
+                    if parent_id in transport_by_parent
+                    else {"can_transport_child": False, "availability": []}
+                ),
                 "events": [
                     {
                         "event_id": event.event_id,
@@ -99,7 +127,10 @@ def get_caregivers() -> dict[str, Any]:
         JSON-serializable caregiver records available to the recovery planner.
     """
 
-    scenario = get_active_scenario()
+    return _caregivers(get_active_scenario())
+
+
+def _caregivers(scenario: DemoScenario) -> dict[str, Any]:
     return {
         "availability_is_authoritative": True,
         "assignment_rule": (
@@ -127,6 +158,11 @@ def get_caregivers() -> dict[str, Any]:
                 "known_to_family": caregiver.known_to_family,
                 "previously_used": caregiver.previously_used,
                 "external_provider": caregiver.external_provider,
+                "care_location_type": caregiver.care_location_type.value,
+                "location_id": caregiver.location_id,
+                "location_label": caregiver.location_label,
+                "travel_minutes_from_family_home": (caregiver.travel_minutes_from_family_home),
+                "can_transport_child": caregiver.can_transport_child,
             }
             for caregiver in scenario.caregivers
         ],

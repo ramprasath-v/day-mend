@@ -22,8 +22,13 @@
           {{ segment.window.start | date: 'h:mm' }}–{{ segment.window.end | date: 'h:mm a' }}
         </time>
         <div>
-          <strong>{{ friendlyPerson(segment.assigned_person_id) }}</strong>
-          <span>{{ segment.source === 'PARENT' ? 'Parent coverage' : 'Trusted caregiver' }}</span>
+          @if (segment.segment_type === 'TRANSPORT') {
+            <strong>Drive to {{ segment.destination_location_label }}</strong>
+            <span>{{ friendlyPerson(segment.transporter_id ?? segment.assigned_person_id) }}</span>
+          } @else {
+            <strong>{{ friendlyPerson(segment.assigned_person_id) }}</strong>
+            <span>{{ segment.location_label }}</span>
+          }
         </div>
         @if (money(segment.estimated_cost) > 0) {
           <b>{{ money(segment.estimated_cost) | currency: 'USD' : 'symbol' : '1.0-0' }}</b>

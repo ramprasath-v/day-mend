@@ -31,7 +31,6 @@ def test_tools_return_json_serializable_scenario_data() -> None:
     assert {item["caregiver_id"] for item in results[2]["caregivers"]} == {
         "grandma",
         "backup_sitter",
-        "employer_backup_care",
     }
 
 
@@ -67,19 +66,15 @@ def test_caregiver_tool_exposes_exact_demo_availability_boundaries() -> None:
 
     assert caregivers["grandma"]["availability_windows"] == [
         {
-            "available_from": "2026-08-27T10:00:00-07:00",
-            "available_to": "2026-08-27T13:00:00-07:00",
+            "available_from": "2026-08-27T09:00:00-07:00",
+            "available_to": "2026-08-27T12:15:00-07:00",
         }
     ]
+    assert caregivers["grandma"]["location_id"] == "grandma_home"
+    assert caregivers["grandma"]["travel_minutes_from_family_home"] == 15
     assert caregivers["backup_sitter"]["availability_windows"] == [
         {
-            "available_from": "2026-08-27T12:00:00-07:00",
-            "available_to": "2026-08-27T16:00:00-07:00",
-        }
-    ]
-    assert caregivers["employer_backup_care"]["availability_windows"] == [
-        {
-            "available_from": "2026-08-27T09:00:00-07:00",
+            "available_from": "2026-08-27T12:15:00-07:00",
             "available_to": "2026-08-27T16:00:00-07:00",
         }
     ]

@@ -1,6 +1,6 @@
 """Deterministic tests for caregiver-decline world-state invalidation."""
 
-from app.fixtures import get_demo_scenario
+from app.fixtures import get_legacy_demo_scenario
 from app.models import PlanAssumptionStatus, PlanValidationState, RecoveryStatus
 from app.services import (
     PlanInvalidationService,
@@ -13,7 +13,7 @@ from tests.milestone2_helpers import at, grandma_decline_event, validated_plan_a
 
 
 def recovery_case():
-    scenario = get_demo_scenario()
+    scenario = get_legacy_demo_scenario()
     return create_active_recovery_case(
         case_id="case-1",
         disruption=scenario.disruption,
@@ -26,7 +26,7 @@ def recovery_case():
 def test_decline_invalidates_only_matching_assumption_and_records_event() -> None:
     event = grandma_decline_event()
     outcome = PlanInvalidationService().apply_caregiver_decline(
-        recovery_case(), event, get_demo_scenario()
+        recovery_case(), event, get_legacy_demo_scenario()
     )
 
     assert len(outcome.invalidated_assumptions) == 1
@@ -45,11 +45,30 @@ def test_decline_invalidates_only_matching_assumption_and_records_event() -> Non
     assert outcome.recovery_case.events[-1] == event
     assert outcome.recovery_case.latest_replan_trigger_event_id == event.event_id
     assert outcome.recovery_case.status is RecoveryStatus.REPLANNING
+    assert outcome.recovery_case.updated_at == event.occurred_at
+
+
+def test_historical_event_preserves_occurred_at_and_keeps_case_time_monotonic() -> None:
+    event = grandma_decline_event()
+    created_at = at(9, 10)
+    case = recovery_case().model_copy(
+        update={"created_at": created_at, "updated_at": created_at}
+    )
+
+    outcome = PlanInvalidationService().apply_caregiver_decline(
+        case, event, get_legacy_demo_scenario()
+    )
+
+    assert event.occurred_at < case.created_at
+    assert outcome.recovery_case.events[-1].occurred_at == event.occurred_at
+    assert outcome.invalidated_assumptions[0].invalidated_at == event.occurred_at
+    assert outcome.recovery_case.updated_at == created_at
+    assert outcome.recovery_case.updated_at >= outcome.recovery_case.created_at
 
 
 def test_impact_analysis_identifies_broken_window_and_preserves_other_segments() -> None:
     outcome = PlanInvalidationService().apply_caregiver_decline(
-        recovery_case(), grandma_decline_event(), get_demo_scenario()
+        recovery_case(), grandma_decline_event(), get_legacy_demo_scenario()
     )
 
     assert [segment.segment_id for segment in outcome.impacted_segments] == ["grandma-midday"]
@@ -64,7 +83,7 @@ def test_impact_analysis_identifies_broken_window_and_preserves_other_segments()
 
 
 def test_updated_world_state_is_visible_to_tools_and_validator() -> None:
-    scenario = get_demo_scenario()
+    scenario = get_legacy_demo_scenario()
     outcome = PlanInvalidationService().apply_caregiver_decline(
         recovery_case(), grandma_decline_event(), scenario
     )
@@ -86,7 +105,7 @@ def test_updated_world_state_is_visible_to_tools_and_validator() -> None:
 
 def test_original_valid_plan_is_preserved_before_replanning() -> None:
     outcome = PlanInvalidationService().apply_caregiver_decline(
-        recovery_case(), grandma_decline_event(), get_demo_scenario()
+        recovery_case(), grandma_decline_event(), get_legacy_demo_scenario()
     )
 
     assert outcome.original_valid_plan.validation_state is PlanValidationState.VALID

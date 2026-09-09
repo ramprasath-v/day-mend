@@ -18,6 +18,21 @@ Parameters:
     Default: amazon.nova-pro-v1:0
     AllowedValues:
       - amazon.nova-pro-v1:0
+      - us.anthropic.claude-sonnet-4-5-20250929-v1:0
+  AgentArchitecture:
+    Type: String
+    Default: single
+    AllowedValues: [single, multi, multi_research]
+  AgentRuntime:
+    Type: String
+    Default: local
+    AllowedValues: [local, agentcore]
+  AgentCoreRuntimeArn:
+    Type: String
+    Default: ""
+
+Conditions:
+  UseAgentCore: !Equals [!Ref AgentRuntime, agentcore]
 
 Resources:
   AppRunnerEcrAccessRole:
@@ -74,6 +89,15 @@ Resources:
                   - bedrock:InvokeModel
                   - bedrock:InvokeModelWithResponseStream
                 Resource: !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}
+              - !If
+                - UseAgentCore
+                - Sid: InvokeDayMendAgentCore
+                  Effect: Allow
+                  Action: bedrock-agentcore:InvokeAgentRuntime
+                  Resource:
+                    - !Ref AgentCoreRuntimeArn
+                    - !Sub ${AgentCoreRuntimeArn}/runtime-endpoint/DEFAULT
+                - !Ref AWS::NoValue
 
   BackendAutoScaling:
     Type: AWS::AppRunner::AutoScalingConfiguration
@@ -115,6 +139,15 @@ Resources:
                 Value: !Ref AWS::Region
               - Name: DAYMEND_BEDROCK_MODEL_ID
                 Value: !Ref BedrockModelId
+              - Name: DAYMEND_AGENT_ARCHITECTURE
+                Value: !Ref AgentArchitecture
+              - Name: DAYMEND_AGENT_RUNTIME
+                Value: !Ref AgentRuntime
+              - !If
+                - UseAgentCore
+                - Name: DAYMEND_AGENTCORE_RUNTIME_ARN
+                  Value: !Ref AgentCoreRuntimeArn
+                - !Ref AWS::NoValue
               - Name: DAYMEND_RECOVERY_REPOSITORY
                 Value: dynamodb
               - Name: DAYMEND_RECOVERY_TABLE

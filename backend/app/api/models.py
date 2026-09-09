@@ -77,6 +77,12 @@ class CoverageSegmentResponse(ApiModel):
     window: CoverageWindowResponse
     assigned_person_id: str
     source: CoverageSource
+    segment_type: str
+    location_id: str
+    location_label: str
+    destination_location_id: str | None
+    destination_location_label: str | None
+    transporter_id: str | None
     estimated_cost: Decimal
 
 

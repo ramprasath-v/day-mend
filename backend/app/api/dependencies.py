@@ -4,6 +4,11 @@ import os
 
 from fastapi import Request
 
+from app.agent.runtime_gateway import (
+    AgentRuntimeMode,
+    build_agentcore_gateway,
+    runtime_mode_from_environment,
+)
 from app.application import RecoveryApplicationService, StrandsRecoveryPlanningGateway
 from app.repositories import (
     DynamoDBRecoveryCaseRepository,
@@ -24,9 +29,14 @@ def build_recovery_repository() -> RecoveryCaseRepository:
 
 
 def build_application_service() -> RecoveryApplicationService:
+    planning_gateway = (
+        build_agentcore_gateway()
+        if runtime_mode_from_environment() is AgentRuntimeMode.AGENTCORE
+        else StrandsRecoveryPlanningGateway()
+    )
     return RecoveryApplicationService(
         build_recovery_repository(),
-        StrandsRecoveryPlanningGateway(),
+        planning_gateway,
     )
 
 

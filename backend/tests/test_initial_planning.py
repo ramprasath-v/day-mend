@@ -10,7 +10,7 @@ from app.agent.recovery_agent import (
     ToolInvocationRecorder,
     run_initial_planning_session,
 )
-from app.fixtures import get_demo_scenario
+from app.fixtures import get_legacy_demo_scenario
 from app.models import (
     CalendarEvent,
     CoverageSource,
@@ -121,8 +121,8 @@ def run(proposals: list[RecoveryPlan]):
     result = run_initial_planning_session(
         agent=agent,
         recorder=ToolInvocationRecorder(),
-        disruption=get_demo_scenario().disruption,
-        scenario=get_demo_scenario(),
+        disruption=get_legacy_demo_scenario().disruption,
+        scenario=get_legacy_demo_scenario(),
         model_id="stub-model",
         validator=validator,
     )

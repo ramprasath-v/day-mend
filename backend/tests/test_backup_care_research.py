@@ -32,7 +32,11 @@ from app.application import (
     RecoveryApplicationService,
     StartRecoveryCommand,
 )
-from app.fixtures import get_backup_care_research_scenario, get_demo_scenario
+from app.fixtures import (
+    get_backup_care_research_scenario,
+    get_demo_scenario,
+    get_legacy_demo_scenario,
+)
 from app.models import (
     CoverageSource,
     PlanApprovalReason,
@@ -216,9 +220,10 @@ def test_research_trigger_is_deterministic_and_not_caregiver_name_specific() -> 
 
 def test_research_agent_is_not_invoked_when_known_options_are_sufficient() -> None:
     planner = StubPlanner([get_demo_scenario_plan()])
+    scenario = get_legacy_demo_scenario()
     result, brief, research, need = run_research_multi_agent_initial_planning(
-        disruption=get_demo_scenario().disruption,
-        scenario=get_demo_scenario(),
+        disruption=scenario.disruption,
+        scenario=scenario,
         config=config(),
         orchestrator=StubOrchestrator(research_brief(research_needed=True)),
         researcher=pytest.fail,
@@ -309,7 +314,9 @@ def test_recommendation_reaches_planner_and_existing_validator_accepts_plan() ->
     assert research is not None
     assert need.requested_windows == [window(10, 12)]
     assert brief.recommended_backup_care_candidate_id == "harbor_nanny_coop"
-    assert brief.model_dump_json() in planner.calls[0][0]
+    assert "Planner input digest:" in planner.calls[0][0]
+    assert '"planning_brief"' in planner.calls[1][0]
+    assert brief.recommended_backup_care_candidate_id in planner.calls[1][0]
     assert planning.success is True
     assert planning.total_attempts == 1
     assert planning.final_plan is not None

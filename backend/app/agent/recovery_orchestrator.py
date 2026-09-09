@@ -53,6 +53,7 @@ class PlanningBrief(ContractModel):
     invalidated_assumption_ids: list[str] = Field(default_factory=list)
     required_coverage_window: CoverageWindow
     affected_windows: list[CoverageWindow] = Field(default_factory=list)
+    affected_segments: list[RecoveryPlanSegment] = Field(default_factory=list)
     preserved_segments: list[RecoveryPlanSegment] = Field(default_factory=list)
     excluded_caregiver_ids: list[str] = Field(default_factory=list)
     relevant_constraint_categories: list[ConstraintCategory] = Field(min_length=1)
@@ -164,6 +165,7 @@ def create_initial_planning_brief(
             "invalidated_assumption_ids": [],
             "required_coverage_window": scenario.required_coverage,
             "affected_windows": [scenario.required_coverage],
+            "affected_segments": [],
             "preserved_segments": [],
             "excluded_caregiver_ids": [],
             "known_options_insufficient": (
@@ -228,6 +230,7 @@ def create_replanning_brief(
             ],
             "required_coverage_window": outcome.updated_scenario.required_coverage,
             "affected_windows": list(outcome.uncovered_windows),
+            "affected_segments": list(outcome.impacted_segments),
             "preserved_segments": list(outcome.preserved_segments),
             "excluded_caregiver_ids": [event.caregiver_id] if event.caregiver_id else [],
             "known_options_insufficient": False,

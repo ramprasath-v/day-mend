@@ -1,0 +1,133 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: DayMend stateless multi-agent reasoning runtime on Amazon Bedrock AgentCore.
+
+Parameters:
+  ResourcePrefix:
+    Type: String
+    Default: daymend-demo
+    AllowedPattern: "[a-z0-9-]+"
+  ArtifactBucket:
+    Type: String
+  ArtifactKey:
+    Type: String
+  BedrockModelId:
+    Type: String
+    Default: amazon.nova-pro-v1:0
+
+Conditions:
+  UseClaudeSonnet45Profile: !Equals
+    - !Ref BedrockModelId
+    - us.anthropic.claude-sonnet-4-5-20250929-v1:0
+
+Resources:
+  AgentCoreRuntimeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ResourcePrefix}-agentcore-runtime
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:*
+      Policies:
+        - PolicyName: DayMendAgentCoreRuntime
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadVersionedRuntimeArtifact
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                Resource: !Sub arn:${AWS::Partition}:s3:::${ArtifactBucket}/${ArtifactKey}
+              - Sid: InvokeConfiguredBedrockModel
+                Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource: !If
+                  - UseClaudeSonnet45Profile
+                  - - !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${BedrockModelId}
+                    - !Sub arn:${AWS::Partition}:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0
+                    - !Sub arn:${AWS::Partition}:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0
+                    - !Sub arn:${AWS::Partition}:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0
+                  - - !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}
+              - !If
+                - UseClaudeSonnet45Profile
+                - Sid: ViewClaudeMarketplaceSubscription
+                  Effect: Allow
+                  Action: aws-marketplace:ViewSubscriptions
+                  Resource: "*"
+                - !Ref AWS::NoValue
+              - !If
+                - UseClaudeSonnet45Profile
+                - Sid: SubscribeClaudeSonnet45
+                  Effect: Allow
+                  Action: aws-marketplace:Subscribe
+                  Resource: "*"
+                  Condition:
+                    ForAnyValue:StringEquals:
+                      aws-marketplace:ProductId:
+                        - prod-mxcfnwvpd6kb4
+                - !Ref AWS::NoValue
+              - Sid: RuntimeTelemetry
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:DescribeLogStreams
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*
+              - Sid: RuntimeMetrics
+                Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: bedrock-agentcore
+
+  DayMendAgentRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Properties:
+      AgentRuntimeName: daymend_reasoning
+      Description: Stateless DayMend Orchestrator, Backup Care Researcher, and Planner reasoning.
+      AgentRuntimeArtifact:
+        CodeConfiguration:
+          Code:
+            S3:
+              Bucket: !Ref ArtifactBucket
+              Prefix: !Ref ArtifactKey
+          Runtime: PYTHON_3_12
+          EntryPoint:
+            - agentcore_runtime.py
+      RoleArn: !GetAtt AgentCoreRuntimeRole.Arn
+      NetworkConfiguration:
+        NetworkMode: PUBLIC
+      ProtocolConfiguration: HTTP
+      EnvironmentVariables:
+        AWS_REGION: !Ref AWS::Region
+        DAYMEND_BEDROCK_MODEL_ID: !Ref BedrockModelId
+        DAYMEND_AGENT_ARCHITECTURE: multi_research
+      LifecycleConfiguration:
+        IdleRuntimeSessionTimeout: 900
+        MaxLifetime: 3600
+      Tags:
+        Project: DayMend
+        Component: ReasoningRuntime
+
+Outputs:
+  AgentRuntimeArn:
+    Value: !GetAtt DayMendAgentRuntime.AgentRuntimeArn
+  AgentRuntimeId:
+    Value: !GetAtt DayMendAgentRuntime.AgentRuntimeId
+  AgentRuntimeRoleArn:
+    Value: !GetAtt AgentCoreRuntimeRole.Arn
+  RuntimeLogGroup:
+    Value: !Sub /aws/bedrock-agentcore/runtimes/${DayMendAgentRuntime.AgentRuntimeId}-DEFAULT

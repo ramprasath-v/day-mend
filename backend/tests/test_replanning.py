@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from app.agent.recovery_agent import MAX_PLAN_ATTEMPTS, ToolInvocationRecorder
 from app.agent.replanning import process_external_event
-from app.fixtures import get_demo_scenario
+from app.fixtures import get_legacy_demo_scenario
 from app.models import PlanValidationState, RecoveryPlan, RecoveryStatus
 from app.services import PlanValidator, ValidationErrorCode, create_active_recovery_case
 from tests.milestone2_helpers import (
@@ -45,7 +45,7 @@ class CountingValidator(PlanValidator):
 
 
 def active_case():
-    scenario = get_demo_scenario()
+    scenario = get_legacy_demo_scenario()
     return create_active_recovery_case(
         case_id="case-replan",
         disruption=scenario.disruption,
@@ -61,7 +61,7 @@ def run_replan(proposals: list[RecoveryPlan]):
     result = process_external_event(
         recovery_case=active_case(),
         event=grandma_decline_event(),
-        scenario=get_demo_scenario(),
+        scenario=get_legacy_demo_scenario(),
         agent=agent,
         recorder=ToolInvocationRecorder(),
         validator=validator,

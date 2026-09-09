@@ -21,6 +21,12 @@ export interface CoverageSegment {
   window: CoverageWindow;
   assigned_person_id: string;
   source: 'CAREGIVER' | 'PARENT';
+  segment_type?: 'CARE' | 'TRANSPORT';
+  location_id?: string;
+  location_label?: string;
+  destination_location_id?: string | null;
+  destination_location_label?: string | null;
+  transporter_id?: string | null;
   estimated_cost: MoneyValue;
 }
 

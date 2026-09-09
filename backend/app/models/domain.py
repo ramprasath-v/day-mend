@@ -131,6 +131,14 @@ class CalendarEvent(ContractModel):
     critical: bool = False
 
 
+class CareLocationType(StrEnum):
+    """Small, synthetic location taxonomy used by deterministic movement checks."""
+
+    FAMILY_HOME = "FAMILY_HOME"
+    CAREGIVER_HOME = "CAREGIVER_HOME"
+    OTHER = "OTHER"
+
+
 class Caregiver(ContractModel):
     """A potential caregiver and the known facts relevant to recovery."""
 
@@ -145,6 +153,11 @@ class Caregiver(ContractModel):
     known_to_family: bool = True
     previously_used: bool = False
     external_provider: bool = False
+    care_location_type: CareLocationType = CareLocationType.FAMILY_HOME
+    location_id: str = "family_home"
+    location_label: str = "Family home"
+    travel_minutes_from_family_home: int = Field(default=0, ge=0)
+    can_transport_child: bool = False
 
     @model_validator(mode="after")
     def has_at_most_one_price_type(self) -> "Caregiver":
@@ -196,6 +209,21 @@ class CoverageSource(StrEnum):
     PARENT = "PARENT"
 
 
+class PlanSegmentType(StrEnum):
+    """Whether a supervised interval is stationary care or child transport."""
+
+    CARE = "CARE"
+    TRANSPORT = "TRANSPORT"
+
+
+class ParentTransportCapability(ContractModel):
+    """Authoritative parent driving capability and bounded transport availability."""
+
+    parent_id: str
+    can_transport_child: bool = False
+    availability: list[CoverageWindow] = Field(default_factory=list)
+
+
 class RecoveryPlanSegment(ContractModel):
     """One continuous portion of childcare coverage in a proposed plan."""
 
@@ -203,7 +231,23 @@ class RecoveryPlanSegment(ContractModel):
     window: CoverageWindow
     assigned_person_id: str
     source: CoverageSource
+    segment_type: PlanSegmentType = PlanSegmentType.CARE
+    location_id: str = "family_home"
+    location_label: str = "Family home"
+    destination_location_id: str | None = None
+    destination_location_label: str | None = None
+    transporter_id: str | None = None
     estimated_cost: Decimal = Field(default=Decimal("0"), ge=0)
+
+    @model_validator(mode="after")
+    def transport_has_destination_and_driver(self) -> "RecoveryPlanSegment":
+        if self.segment_type is PlanSegmentType.TRANSPORT and (
+            self.destination_location_id is None or self.transporter_id is None
+        ):
+            raise ValueError(
+                "transport segments require destination_location_id and transporter_id"
+            )
+        return self
 
 
 class BackupCareCandidate(ContractModel):
@@ -225,6 +269,11 @@ class BackupCareCandidate(ContractModel):
     known_to_family: bool = False
     previously_used: bool = False
     source: str
+    care_location_type: CareLocationType = CareLocationType.FAMILY_HOME
+    location_id: str = "family_home"
+    location_label: str = "Family home"
+    travel_minutes_from_family_home: int = Field(default=0, ge=0)
+    can_transport_child: bool = False
 
     @model_validator(mode="after")
     def candidate_contract_is_consistent(self) -> "BackupCareCandidate":

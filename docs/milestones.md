@@ -161,6 +161,37 @@ hard eligibility and approval remain deterministic; grounded researched care rea
 accepted plan and verified completion; `single` and `multi` regressions remain green; production
 and AgentCore remain unchanged.
 
+## Milestone 6.5C — Amazon Bedrock AgentCore Runtime
+
+**Goal:** Host only the existing multi-agent reasoning layer in AgentCore while App Runner remains
+authoritative for deterministic validation and the complete `RecoveryCase` lifecycle.
+
+**Status:** Runtime deployed and direct reasoning proven; final hosted lifecycle still pending,
+so the milestone is not complete. The
+versioned request/response contracts, stateless runtime entry point, local/AgentCore gateway
+selection, application-side remote repair loop, application-side deterministic invalidation,
+IAM-scoped CloudFormation, isolated packaging script, and regression suite are present. Runtime
+`daymend_reasoning-nVUAuPG7rz` successfully ran direct initial and research requests. The research
+proof used one Orchestrator, one Research Agent, one Planner, seven model calls, and returned a
+candidate accepted by deterministic validation. Production configuration remains `single + local`.
+
+Two bounded App Runner checks identified the exact IAM contract: AgentCore authorizes both the
+parent runtime and its `DEFAULT` endpoint. Parent-only and endpoint-only policies each failed the
+complementary check before runtime execution. The template now lists both exact ARNs, but the
+public service was rolled back to `local + single` and health-verified. The corrected dual-resource
+policy proved hosted invocation, and Claude Sonnet 4.5 achieved 3/3 direct planning reliability
+plus a valid hosted Plan A. That lifecycle stopped because the old synthetic facts allowed a plan
+without Grandma, making the fixed decline event inapplicable. The revised showcase adds explicit
+locations, supervised transport, deterministic 15-minute travel, and parent/caregiver transport
+capability. One bounded local Claude run produced valid Grandma-dependent Plan A, triggered the
+existing Research Agent after her decline, produced valid Plan B, crossed the unchanged approval
+boundary, and reached `RESOLVED`. Production remains `local + single`; hosted replanning, browser,
+and persistence proof remain pending.
+
+**Exit criterion:** The isolated runtime and research flow are live-verified; App Runner invokes it
+with IAM; remote Plan A/repair/Plan B retain application validation; a hosted same-case lifecycle
+reaches persisted `RESOLVED`; rollback to local is verified before any production switch.
+
 ## Milestone 7 — Submission polish
 
 **Goal:** Prepare the architecture diagram, README, tests, public repository, license, demo

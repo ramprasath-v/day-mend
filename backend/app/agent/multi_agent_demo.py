@@ -1,4 +1,4 @@
-"""Live local Nova Pro proof for the complete opt-in two-agent recovery lifecycle."""
+"""Live local proof for the complete opt-in three-agent recovery lifecycle."""
 
 import json
 import sys
@@ -37,9 +37,9 @@ def main() -> int:
     initial_only = "--initial-only" in sys.argv[1:]
     config = RecoveryAgentConfig.from_environment()
     case_id = f"daymend-multi-{uuid4()}"
-    if config.architecture is not AgentArchitecture.MULTI:
+    if config.architecture is not AgentArchitecture.MULTI_RESEARCH:
         print(
-            "LIVE SMOKE REQUIRES DAYMEND_AGENT_ARCHITECTURE=multi",
+            "LIVE SMOKE REQUIRES DAYMEND_AGENT_ARCHITECTURE=multi_research",
             file=sys.stderr,
         )
         return 1
@@ -112,7 +112,7 @@ def main() -> int:
             EventCommand(
                 event_type=RecoveryEventType.CAREGIVER_DECLINED,
                 caregiver_id="grandma",
-                occurred_at=at(9, 5),
+                occurred_at=at(8, 20),
                 relevant_window=affected_window,
                 message="Sorry, I can't help today.",
                 expected_version=plan_a_case.version,
@@ -207,6 +207,12 @@ def main() -> int:
             "deterministic_total_cost": replan.deterministic_total_cost,
             "orchestrator_invocations": replan.orchestrator_invocation_count,
             "planner_invocations": replan.planner_invocation_count,
+            "research_agent_invocations": replan.research_agent_invocation_count,
+            "researched_candidate_id": (
+                replan.researched_candidate.candidate_id
+                if replan.researched_candidate is not None
+                else None
+            ),
             "bedrock_model_calls": replan.model_call_count,
             "tool_calls": replan.tool_call_count,
             "tools_used": replan.tools_used,
@@ -240,6 +246,9 @@ def main() -> int:
             ),
             "planner_invocations": (
                 initial.planner_invocation_count + replan.planner_invocation_count
+            ),
+            "research_agent_invocations": (
+                initial.research_agent_invocation_count + replan.research_agent_invocation_count
             ),
             "bedrock_model_calls": initial.model_call_count + replan.model_call_count,
             "tool_calls": initial.tool_call_count + replan.tool_call_count,

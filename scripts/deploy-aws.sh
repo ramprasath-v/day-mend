@@ -7,7 +7,15 @@ RESOURCE_PREFIX="${DAYMEND_RESOURCE_PREFIX:-daymend-demo}"
 FOUNDATION_STACK="${RESOURCE_PREFIX}-foundation"
 SERVICE_STACK="${RESOURCE_PREFIX}-service"
 MODEL_ID="${DAYMEND_BEDROCK_MODEL_ID:-amazon.nova-pro-v1:0}"
+AGENT_ARCHITECTURE="${DAYMEND_AGENT_ARCHITECTURE:-single}"
+AGENT_RUNTIME="${DAYMEND_AGENT_RUNTIME:-local}"
+AGENTCORE_RUNTIME_ARN="${DAYMEND_AGENTCORE_RUNTIME_ARN:-}"
 IMAGE_TAG="$(date -u +%Y%m%d%H%M%S)"
+
+if [[ "$AGENT_RUNTIME" == "agentcore" && -z "$AGENTCORE_RUNTIME_ARN" ]]; then
+  echo "DAYMEND_AGENTCORE_RUNTIME_ARN is required when DAYMEND_AGENT_RUNTIME=agentcore" >&2
+  exit 2
+fi
 
 stack_output() {
   aws cloudformation describe-stacks \
@@ -49,7 +57,10 @@ aws cloudformation deploy \
     "ImageIdentifier=$IMAGE_IDENTIFIER" \
     "RecoveryCasesTableName=$TABLE_NAME" \
     "FrontendOrigin=https://$FRONTEND_DOMAIN" \
-    "BedrockModelId=$MODEL_ID"
+    "BedrockModelId=$MODEL_ID" \
+    "AgentArchitecture=$AGENT_ARCHITECTURE" \
+    "AgentRuntime=$AGENT_RUNTIME" \
+    "AgentCoreRuntimeArn=$AGENTCORE_RUNTIME_ARN"
 
 BACKEND_URL="$(stack_output "$SERVICE_STACK" BackendServiceUrl)"
 
@@ -75,3 +86,5 @@ printf 'Frontend URL: https://%s\n' "$FRONTEND_DOMAIN"
 printf 'Backend URL: %s\n' "$BACKEND_URL"
 printf 'DynamoDB table: %s\n' "$TABLE_NAME"
 printf 'App Runner image: %s\n' "$IMAGE_IDENTIFIER"
+printf 'Agent architecture: %s\n' "$AGENT_ARCHITECTURE"
+printf 'Agent runtime: %s\n' "$AGENT_RUNTIME"

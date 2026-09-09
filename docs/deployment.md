@@ -169,6 +169,64 @@ The table, ECR repository, and frontend bucket use `Retain` policies to prevent 
 loss if a stack is deleted. Remove retained demo resources manually only when intentionally
 decommissioning the hosted demo.
 
+## AgentCore deployment and hosted integration status
+
+`infra/agentcore.yaml` defines a separate direct-code AgentCore Runtime and execution role. The
+role can read only its versioned S3 artifact, invoke the configured Bedrock model, and publish
+runtime logs/metrics. `infra/service.yaml` has opt-in `AgentRuntime`, `AgentArchitecture`, and
+`AgentCoreRuntimeArn` parameters; their defaults remain `local`, `single`, and empty. The App
+Runner role receives `bedrock-agentcore:InvokeAgentRuntime` only when that opt-in condition is
+enabled.
+
+Prepare and deploy the isolated runtime with:
+
+```bash
+AWS_REGION=us-east-1 ./scripts/deploy-agentcore.sh
+```
+
+The script creates a private, encrypted, versioned artifact bucket if needed; packages only the
+runtime entry point, application modules, and runtime requirements; uploads a timestamped ZIP;
+and deploys the `daymend-demo-agentcore` CloudFormation stack. It does not update App Runner or
+switch public traffic.
+
+Expected runtime log group:
+
+```text
+/aws/bedrock-agentcore/runtimes/<runtime-id>-DEFAULT
+```
+
+Runtime `daymend_reasoning-nVUAuPG7rz` is deployed in `us-east-1`. Direct initial planning and the
+research-enabled path succeeded; the research proof recorded one Orchestrator, one Research Agent,
+one Planner, seven model calls, and a deterministically valid candidate.
+
+The existing App Runner service was updated with image `20260902045227` and the intended
+`multi_research + agentcore` environment. Health remained 200, but the first create request failed
+before runtime execution because a parent-runtime-only IAM policy did not authorize the concrete
+`runtime-endpoint/DEFAULT` resource. An endpoint-only correction then proved the complementary
+parent-runtime authorization check. Both failures were bounded, carried distinct request IDs, and
+produced no AgentCore runtime request. Production was immediately rolled back after each check.
+
+The checked-in least-privilege policy now grants `bedrock-agentcore:InvokeAgentRuntime` on exactly:
+
+```text
+arn:aws:bedrock-agentcore:us-east-1:109837542034:runtime/daymend_reasoning-nVUAuPG7rz
+arn:aws:bedrock-agentcore:us-east-1:109837542034:runtime/daymend_reasoning-nVUAuPG7rz/runtime-endpoint/DEFAULT
+```
+
+The dual-resource correction was deployed for one controlled verification. App Runner request
+`f170ed41-5786-411d-829d-21bc570e5584` completed initial AgentCore reasoning; repair requests
+`d1b3498e-de80-4121-9d72-99d17e185bbf` and
+`9572dd3c-a720-4ba0-8574-da5ef47cc1c1` also completed successfully. AgentCore runtime logs matched
+all three session/request IDs and recorded the five authoritative planning tools on every call.
+The application-side validator rejected `plan_1`, `plan_2`, and `plan_3` with issue counts 1, 2,
+and 2, so the API returned `PLANNING_FAILED` after the unchanged three-attempt cap. Case
+`30560011-c262-4c5a-99d6-49d3b4049d4c` was never persisted.
+
+The live service was immediately rolled back and is healthy on
+`DAYMEND_AGENT_RUNTIME=local` and `DAYMEND_AGENT_ARCHITECTURE=single`, with no AgentCore permission
+attached. Hosted lifecycle/browser proof therefore remains pending even though App Runner IAM and
+transport invocation are now proven.
+
 ## Secret audit
 
 The final working-tree and git-history scan checked AWS access-key IDs, AWS credential variable

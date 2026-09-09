@@ -15,6 +15,7 @@ from app.agent.recovery_agent import (
 )
 from app.fixtures import DemoScenario
 from app.models import (
+    BackupCareCandidate,
     ContractModel,
     CoverageWindow,
     PlanAssumption,
@@ -58,6 +59,8 @@ class ReplanningResult(ContractModel):
     planner_invocation_count: int = Field(default=0, ge=0)
     model_call_count: int = Field(default=0, ge=0)
     tool_call_count: int = Field(default=0, ge=0)
+    research_agent_invocation_count: int = Field(default=0, ge=0)
+    researched_candidate: BackupCareCandidate | None = None
 
 
 def process_external_event(
@@ -123,6 +126,8 @@ def build_replanning_result(
     orchestrator_invocation_count: int = 0,
     planner_invocation_count: int = 0,
     model_call_count: int = 0,
+    research_agent_invocation_count: int = 0,
+    researched_candidate=None,
 ) -> ReplanningResult:
     """Apply validated planning attempts to a deterministic invalidation outcome."""
 
@@ -178,6 +183,8 @@ def build_replanning_result(
         planner_invocation_count=planner_invocation_count,
         model_call_count=model_call_count,
         tool_call_count=len(tools_used),
+        research_agent_invocation_count=research_agent_invocation_count,
+        researched_candidate=researched_candidate,
     )
 
 

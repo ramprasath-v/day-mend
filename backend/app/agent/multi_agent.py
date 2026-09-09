@@ -2,7 +2,12 @@
 
 from time import perf_counter
 
-from app.agent.config import RecoveryAgentConfig
+from app.agent.backup_care_researcher import (
+    BackupCareResearcherLike,
+    build_backup_care_researcher,
+    run_backup_care_research,
+)
+from app.agent.config import AgentArchitecture, RecoveryAgentConfig
 from app.agent.constraint_planner import (
     ConstraintPlannerLike,
     build_constraint_planner,
@@ -20,7 +25,12 @@ from app.agent.replanning import ReplanningResult, build_replanning_result
 from app.fixtures import DemoScenario
 from app.models import RecoveryCase, RecoveryEvent
 from app.observability import log_event
-from app.services import PlanInvalidationService, PlanValidator
+from app.services import (
+    PlanInvalidationService,
+    PlanValidator,
+    add_researched_caregiver,
+    assess_known_option_recovery_need,
+)
 
 
 def run_multi_agent_initial_planning(
@@ -46,7 +56,7 @@ def run_multi_agent_initial_planning(
     mode = "initial"
     log_event(
         "orchestrator_invocation_started",
-        architecture="multi",
+        architecture=config.architecture.value,
         agent_role="recovery_orchestrator",
         planning_mode=mode,
         model_id=config.model_id,
@@ -60,7 +70,7 @@ def run_multi_agent_initial_planning(
     )
     log_event(
         "orchestrator_invocation_completed",
-        architecture="multi",
+        architecture=config.architecture.value,
         agent_role="recovery_orchestrator",
         planning_mode=mode,
         model_id=config.model_id,
@@ -72,7 +82,7 @@ def run_multi_agent_initial_planning(
     )
     log_event(
         "planner_invocation_started",
-        architecture="multi",
+        architecture=config.architecture.value,
         agent_role="constraint_planner",
         planning_mode=mode,
         model_id=config.model_id,
@@ -106,8 +116,10 @@ def run_multi_agent_replanning(
     config: RecoveryAgentConfig,
     orchestrator: RecoveryOrchestratorLike | None = None,
     planner: ConstraintPlannerLike | None = None,
+    researcher: BackupCareResearcherLike | None = None,
     orchestrator_recorder: ToolInvocationRecorder | None = None,
     planner_recorder: ToolInvocationRecorder | None = None,
+    researcher_recorder: ToolInvocationRecorder | None = None,
     validator: PlanValidator | None = None,
     invalidation_service: PlanInvalidationService | None = None,
 ) -> tuple[ReplanningResult, PlanningBrief]:
@@ -126,7 +138,7 @@ def run_multi_agent_replanning(
     case_id = recovery_case.case_id
     log_event(
         "orchestrator_invocation_started",
-        architecture="multi",
+        architecture=config.architecture.value,
         agent_role="recovery_orchestrator",
         planning_mode=mode,
         recovery_case_id=case_id,
@@ -138,9 +150,39 @@ def run_multi_agent_replanning(
         recorder=resolved_orchestrator_recorder,
         outcome=outcome,
     )
+    brief = orchestration.brief
+    planning_scenario = outcome.updated_scenario
+    research_run = None
+    if config.architecture is AgentArchitecture.MULTI_RESEARCH:
+        need = assess_known_option_recovery_need(outcome.updated_scenario)
+        if need.research_needed:
+            researcher_recorder = researcher_recorder or ToolInvocationRecorder(
+                allowed_tool_names={"search_backup_care"}
+            )
+            researcher = researcher or build_backup_care_researcher(config, researcher_recorder)
+            research_run = run_backup_care_research(
+                researcher=researcher,
+                recorder=researcher_recorder,
+                scenario=outcome.updated_scenario,
+                recovery_need=need,
+            )
+            planning_scenario = add_researched_caregiver(
+                outcome.updated_scenario, research_run.recommended_candidate
+            )
+            brief = brief.model_copy(
+                update={
+                    "known_options_insufficient": True,
+                    "unresolved_known_option_windows": need.requested_windows,
+                    "backup_research_needed": True,
+                    "researched_candidate_ids": (research_run.result.eligible_candidate_ids),
+                    "recommended_backup_care_candidate_id": (
+                        research_run.result.recommended_candidate_id
+                    ),
+                }
+            )
     log_event(
         "orchestrator_invocation_completed",
-        architecture="multi",
+        architecture=config.architecture.value,
         agent_role="recovery_orchestrator",
         planning_mode=mode,
         recovery_case_id=case_id,
@@ -153,7 +195,7 @@ def run_multi_agent_replanning(
     )
     log_event(
         "planner_invocation_started",
-        architecture="multi",
+        architecture=config.architecture.value,
         agent_role="constraint_planner",
         planning_mode=mode,
         recovery_case_id=case_id,
@@ -163,24 +205,37 @@ def run_multi_agent_replanning(
     planning = run_constraint_planning(
         planner=resolved_planner,
         recorder=resolved_planner_recorder,
-        brief=orchestration.brief,
-        scenario=outcome.updated_scenario,
+        brief=brief,
+        scenario=planning_scenario,
         model_id=config.model_id,
         validator=validator,
     )
-    _log_planner_result(planning, mode=mode, started=planner_started, case_id=case_id)
-    tools_used = [*orchestration.tools_used, *planning.tools_used]
+    _log_planner_result(
+        planning,
+        mode=mode,
+        started=planner_started,
+        case_id=case_id,
+        architecture=config.architecture.value,
+    )
+    research_tools = research_run.tools_used if research_run else []
+    tools_used = [*orchestration.tools_used, *research_tools, *planning.tools_used]
     replanning = build_replanning_result(
         outcome=outcome,
         event=event,
         attempts=planning.attempts,
         tools_used=tools_used,
-        architecture="multi",
+        architecture=config.architecture.value,
         orchestrator_invocation_count=1,
         planner_invocation_count=planning.planner_invocation_count,
-        model_call_count=orchestration.model_call_count + planning.model_call_count,
+        model_call_count=(
+            orchestration.model_call_count
+            + (research_run.model_call_count if research_run else 0)
+            + planning.model_call_count
+        ),
+        research_agent_invocation_count=1 if research_run else 0,
+        researched_candidate=(research_run.recommended_candidate if research_run else None),
     )
-    return replanning, orchestration.brief
+    return replanning, brief
 
 
 def _log_planner_result(

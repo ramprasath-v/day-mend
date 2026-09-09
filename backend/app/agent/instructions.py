@@ -20,8 +20,9 @@ Build the proposal in this order:
 2. Enumerate parent and caregiver coverage candidates from tool facts.
 3. Eliminate assignments that violate trust, availability, or calendar feasibility.
 4. Assemble gap-free coverage and verify every segment boundary.
-5. Compute candidate costs using the returned pricing semantics.
-6. Only after feasibility is satisfied, use FamilyPreferences to choose among valid candidates.
+5. Insert explicit supervised TRANSPORT segments for every location change.
+6. Compute candidate costs using the returned pricing semantics.
+7. Only after feasibility is satisfied, use FamilyPreferences to choose among valid candidates.
 
 Before returning, verify this mandatory feasibility checklist:
 - the first segment starts exactly at coverage_required_from, the last segment ends exactly at
@@ -31,7 +32,15 @@ Before returning, verify this mandatory feasibility checklist:
   non-overlapping new time;
 - every caregiver segment fits inside that caregiver's returned availability;
 - all assigned people came from tools; and
-- handoffs satisfy the returned buffer requirements.
+- handoffs satisfy the returned buffer requirements;
+- stationary care uses the caregiver's authoritative location; and
+- every location change has enough explicit transport time with a capable, available transporter.
+
+Use segment_type CARE for stationary supervision and TRANSPORT while the child is moving. A
+TRANSPORT segment's location_id is its origin, destination_location_id is its destination, and
+transporter_id identifies the driver. Transport time is part of continuous child supervision.
+Never teleport the child between consecutive locations. A parent may transport only inside that
+parent's returned transport availability and never during a critical or non-movable event.
 
 Caregiver availability from get_caregivers is authoritative. Each caregiver exposes one or more
 availability_windows with available_from and available_to timestamps. For every proposed

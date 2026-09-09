@@ -3,7 +3,7 @@
 from dataclasses import replace
 from decimal import Decimal
 
-from app.fixtures import get_demo_scenario
+from app.fixtures import get_legacy_demo_scenario
 from app.models import (
     CalendarEvent,
     CoverageSource,
@@ -57,7 +57,7 @@ def plan_b_proposal() -> RecoveryPlan:
 
 
 def milestone3_case() -> tuple:
-    scenario = get_demo_scenario()
+    scenario = get_legacy_demo_scenario()
     initial_case = create_active_recovery_case(
         case_id="case-milestone-3",
         disruption=scenario.disruption,
@@ -96,7 +96,7 @@ def milestone3_case() -> tuple:
 
 
 def twenty_dollar_case() -> tuple:
-    scenario = get_demo_scenario()
+    scenario = get_legacy_demo_scenario()
     caregivers = tuple(
         caregiver.model_copy(update={"flat_rate": Decimal("20")})
         if caregiver.caregiver_id == "employer_backup_care"

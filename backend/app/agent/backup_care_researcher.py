@@ -74,8 +74,9 @@ search_backup_care exactly once. That tool uses synthetic provider inventory and
 applied hard availability, verification, background-check, and child-age rules.
 
 Compare every eligible candidate using the family's soft preferences and meaningful tradeoffs:
-price, distance, rating, review history, prior use, and fit for the requested windows. Rank every
-eligible candidate, recommend one grounded candidate ID, and explain concise tradeoffs. Never
+price, distance, rating, review history, prior use, care location, transport burden, number of
+handoffs, and fit for the requested windows. Rank every eligible candidate, recommend one
+grounded candidate ID, and explain concise tradeoffs. Never
 invent a candidate or include a hard-ineligible candidate in the ranking.
 
 You do not construct or validate a RecoveryPlan, calculate authoritative final plan cost, decide

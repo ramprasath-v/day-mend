@@ -10,6 +10,7 @@ from app.models import (
     CoverageWindow,
     PlanAssumption,
     PlanAssumptionStatus,
+    PlanSegmentType,
     PlanValidationState,
     RecoveryCase,
     RecoveryEvent,
@@ -140,9 +141,43 @@ class PlanInvalidationService:
             and segment.assigned_person_id == event.caregiver_id
             and _windows_overlap(segment.window, event.relevant_window)
         ]
+        declined = next(
+            (
+                caregiver
+                for caregiver in scenario.caregivers
+                if caregiver.caregiver_id == event.caregiver_id
+            ),
+            None,
+        )
+        if declined is None:
+            raise ValueError(f"unknown caregiver {event.caregiver_id}")
+        ordered = sorted(
+            original_plan.coverage_segments,
+            key=lambda segment: (segment.window.start, segment.window.end),
+        )
+        impacted_ids = {segment.segment_id for segment in impacted}
+        for index, segment in enumerate(ordered):
+            if segment.segment_id not in impacted_ids:
+                continue
+            if index > 0:
+                previous = ordered[index - 1]
+                if (
+                    previous.segment_type is PlanSegmentType.TRANSPORT
+                    and previous.window.end == segment.window.start
+                    and previous.destination_location_id == declined.location_id
+                ):
+                    impacted_ids.add(previous.segment_id)
+            if index + 1 < len(ordered):
+                following = ordered[index + 1]
+                if (
+                    following.segment_type is PlanSegmentType.TRANSPORT
+                    and following.window.start == segment.window.end
+                    and following.location_id == declined.location_id
+                ):
+                    impacted_ids.add(following.segment_id)
+        impacted = [segment for segment in ordered if segment.segment_id in impacted_ids]
         if not impacted or not invalidated:
             raise ValueError("caregiver decline did not invalidate an active plan dependency")
-        impacted_ids = {segment.segment_id for segment in impacted}
         preserved = [
             segment
             for segment in original_plan.coverage_segments
@@ -181,7 +216,11 @@ class PlanInvalidationService:
                 "assumptions": updated_assumptions,
                 "events": [*recovery_case.events, event],
                 "latest_replan_trigger_event_id": event.event_id,
-                "updated_at": event.occurred_at,
+                "updated_at": max(
+                    recovery_case.created_at,
+                    recovery_case.updated_at,
+                    event.occurred_at,
+                ),
             }
         )
         return InvalidationOutcome(

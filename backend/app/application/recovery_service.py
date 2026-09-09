@@ -419,6 +419,9 @@ class RecoveryApplicationService:
         self._check_expected_version(recovery_case, command.expected_version)
         if command.event_type is not RecoveryEventType.CAREGIVER_DECLINED:
             raise EventNotApplicable(f"Event type {command.event_type} is not supported.")
+        recovery_case = recovery_case.model_copy(
+            update={"updated_at": self._now(recovery_case.updated_at)}
+        )
         log_event("caregiver_declined", recovery_case_id=case_id, status=recovery_case.status)
         log_event("replanning_started", recovery_case_id=case_id, phase="replanning")
         started = perf_counter()
@@ -473,6 +476,18 @@ class RecoveryApplicationService:
 
         if result.success:
             result = self._accept_replanning_result(recovery_case, result)
+            if result.researched_candidate is not None:
+                context_state = result.recovery_case.context_state.copy()
+                context_state["researched_backup_care_candidate"] = (
+                    result.researched_candidate.model_dump(mode="json")
+                )
+                result = result.model_copy(
+                    update={
+                        "recovery_case": result.recovery_case.model_copy(
+                            update={"context_state": context_state}
+                        )
+                    }
+                )
         replanned = self.repository.save(
             result.recovery_case,
             expected_version=recovery_case.version,

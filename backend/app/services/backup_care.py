@@ -130,6 +130,11 @@ def add_researched_caregiver(
         known_to_family=candidate.known_to_family,
         previously_used=candidate.previously_used,
         external_provider=True,
+        care_location_type=candidate.care_location_type,
+        location_id=candidate.location_id,
+        location_label=candidate.location_label,
+        travel_minutes_from_family_home=candidate.travel_minutes_from_family_home,
+        can_transport_child=candidate.can_transport_child,
     )
     return DemoScenario(
         disruption=scenario.disruption,
@@ -141,6 +146,8 @@ def add_researched_caregiver(
         caregivers=(*scenario.caregivers, caregiver),
         preferences=scenario.preferences,
         policy=scenario.policy,
+        family_home_location_id=scenario.family_home_location_id,
+        parent_transport_capabilities=scenario.parent_transport_capabilities,
         child_age_years=scenario.child_age_years,
         backup_care_candidates=scenario.backup_care_candidates,
     )

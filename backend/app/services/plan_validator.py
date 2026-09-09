@@ -14,7 +14,9 @@ from app.models import (
     CoverageSource,
     CoverageWindow,
     FamilyPreferences,
+    ParentTransportCapability,
     PlanApprovalReason,
+    PlanSegmentType,
     PlanValidationState,
     RecoveryPlan,
     RecoveryPlanSegment,
@@ -37,6 +39,9 @@ class ValidationErrorCode(StrEnum):
     UNSUPPORTED_PERSON = "unsupported_person"
     UNSUPPORTED_CALENDAR_EVENT = "unsupported_calendar_event"
     HARD_POLICY_VIOLATION = "hard_policy_violation"
+    LOCATION_TRANSITION_INVALID = "location_transition_invalid"
+    INSUFFICIENT_TRAVEL_TIME = "insufficient_travel_time"
+    TRANSPORTER_UNAVAILABLE = "transporter_unavailable"
 
 
 class PlanValidationIssue(ContractModel):
@@ -80,6 +85,7 @@ class PlanValidator:
         self._validate_unique_segment_ids(segments, issues)
         self._validate_coverage_and_handoffs(segments, scenario, caregivers, issues)
         self._validate_assignments(segments, scenario, caregivers, parent_ids, issues)
+        self._validate_locations_and_transport(segments, scenario, caregivers, issues)
         self._validate_parent_calendars(segments, plan.calendar_changes, scenario, issues)
 
         # Cost: authoritative prices replace every model-proposed amount.
@@ -426,6 +432,156 @@ class PlanValidator:
                     )
 
     @staticmethod
+    def _validate_locations_and_transport(
+        segments: list[RecoveryPlanSegment],
+        scenario: DemoScenario,
+        caregivers: dict[str, Caregiver],
+        issues: list[PlanValidationIssue],
+    ) -> None:
+        home = scenario.family_home_location_id
+        known_locations = {home, *(caregiver.location_id for caregiver in caregivers.values())}
+        travel_from_home = {
+            caregiver.location_id: caregiver.travel_minutes_from_family_home
+            for caregiver in caregivers.values()
+            if caregiver.location_id != home
+        }
+        parent_transport = {item.parent_id: item for item in scenario.parent_transport_capabilities}
+
+        for segment in segments:
+            if segment.location_id not in known_locations:
+                issues.append(
+                    PlanValidationIssue(
+                        code=ValidationErrorCode.LOCATION_TRANSITION_INVALID,
+                        message=f"Segment {segment.segment_id} uses unknown location "
+                        f"{segment.location_id}.",
+                        segment_id=segment.segment_id,
+                    )
+                )
+            if segment.segment_type is PlanSegmentType.CARE:
+                caregiver = caregivers.get(segment.assigned_person_id)
+                if caregiver is not None and segment.location_id != caregiver.location_id:
+                    issues.append(
+                        PlanValidationIssue(
+                            code=ValidationErrorCode.LOCATION_TRANSITION_INVALID,
+                            message=f"Caregiver {caregiver.caregiver_id} provides care at "
+                            f"{caregiver.location_id}, not {segment.location_id}.",
+                            subject_id=caregiver.caregiver_id,
+                            segment_id=segment.segment_id,
+                        )
+                    )
+                continue
+
+            destination = segment.destination_location_id
+            assert destination is not None
+            if destination not in known_locations or destination == segment.location_id:
+                issues.append(
+                    PlanValidationIssue(
+                        code=ValidationErrorCode.LOCATION_TRANSITION_INVALID,
+                        message=f"Transport segment {segment.segment_id} needs distinct, known "
+                        "origin and destination locations.",
+                        segment_id=segment.segment_id,
+                    )
+                )
+            required_minutes = _travel_minutes(
+                segment.location_id,
+                destination,
+                home,
+                travel_from_home,
+            )
+            actual_minutes = int((segment.window.end - segment.window.start).total_seconds() // 60)
+            if required_minutes is None:
+                issues.append(
+                    PlanValidationIssue(
+                        code=ValidationErrorCode.LOCATION_TRANSITION_INVALID,
+                        message=f"No authoritative travel duration exists for transport segment "
+                        f"{segment.segment_id}.",
+                        segment_id=segment.segment_id,
+                    )
+                )
+            elif actual_minutes < required_minutes:
+                issues.append(
+                    PlanValidationIssue(
+                        code=ValidationErrorCode.INSUFFICIENT_TRAVEL_TIME,
+                        message=f"Transport segment {segment.segment_id} provides "
+                        f"{actual_minutes} of {required_minutes} required travel minutes.",
+                        segment_id=segment.segment_id,
+                    )
+                )
+            PlanValidator._validate_transporter(
+                segment, scenario, caregivers, parent_transport, issues
+            )
+
+        for previous, current in zip(segments, segments[1:], strict=False):
+            previous_end = (
+                previous.destination_location_id
+                if previous.segment_type is PlanSegmentType.TRANSPORT
+                else previous.location_id
+            )
+            if previous_end != current.location_id:
+                issues.append(
+                    PlanValidationIssue(
+                        code=ValidationErrorCode.LOCATION_TRANSITION_INVALID,
+                        message=f"Child cannot move from {previous_end} to "
+                        f"{current.location_id} before segment {current.segment_id} without "
+                        "an explicit transport segment.",
+                        segment_id=current.segment_id,
+                    )
+                )
+
+    @staticmethod
+    def _validate_transporter(
+        segment: RecoveryPlanSegment,
+        scenario: DemoScenario,
+        caregivers: dict[str, Caregiver],
+        parent_transport: dict[str, ParentTransportCapability],
+        issues: list[PlanValidationIssue],
+    ) -> None:
+        transporter_id = segment.transporter_id
+        assert transporter_id is not None
+        capability = parent_transport.get(transporter_id)
+        caregiver = caregivers.get(transporter_id)
+        capable = (capability is not None and capability.can_transport_child) or (
+            caregiver is not None and caregiver.can_transport_child
+        )
+        availability = (
+            capability.availability
+            if capability is not None
+            else caregiver.availability
+            if caregiver is not None
+            else []
+        )
+        available = any(
+            window.start <= segment.window.start and window.end >= segment.window.end
+            for window in availability
+        )
+        if not capable or not available:
+            issues.append(
+                PlanValidationIssue(
+                    code=ValidationErrorCode.TRANSPORTER_UNAVAILABLE,
+                    message=f"Transporter {transporter_id} is not capable and available for "
+                    f"segment {segment.segment_id}.",
+                    subject_id=transporter_id,
+                    segment_id=segment.segment_id,
+                )
+            )
+        for event in scenario.parent_events:
+            if event.owner_id != transporter_id or not _windows_overlap(
+                segment.window, event.window
+            ):
+                continue
+            if event.critical or not event.movable:
+                issues.append(
+                    PlanValidationIssue(
+                        code=ValidationErrorCode.PARENT_CRITICAL_CONFLICT,
+                        message=f"Parent {transporter_id} transports during critical or "
+                        f"non-movable event {event.event_id}.",
+                        subject_id=transporter_id,
+                        segment_id=segment.segment_id,
+                        event_id=event.event_id,
+                    )
+                )
+
+    @staticmethod
     def _recompute_costs(
         segments: list[RecoveryPlanSegment],
         caregivers: dict[str, Caregiver],
@@ -503,3 +659,18 @@ class PlanValidator:
 
 def _windows_overlap(left: CoverageWindow, right: CoverageWindow) -> bool:
     return left.start < right.end and right.start < left.end
+
+
+def _travel_minutes(
+    origin: str,
+    destination: str,
+    family_home: str,
+    travel_from_home: dict[str, int],
+) -> int | None:
+    if origin == destination:
+        return 0
+    if origin == family_home:
+        return travel_from_home.get(destination)
+    if destination == family_home:
+        return travel_from_home.get(origin)
+    return None

@@ -396,3 +396,30 @@ The primary end-to-end scenario is documented in
 
 The fixture is deterministic and synthetic. Tool selection and structured plan generation in
 the smoke path are performed by the real Strands/Bedrock agent; no Plan A is hardcoded.
+
+## AgentCore runtime boundary (Milestone 6.5C)
+
+The backend now has separate architecture and runtime switches:
+
+```bash
+DAYMEND_AGENT_ARCHITECTURE=single|multi|multi_research
+DAYMEND_AGENT_RUNTIME=local|agentcore
+DAYMEND_AGENTCORE_RUNTIME_ARN=arn:aws:bedrock-agentcore:...
+```
+
+`local` remains the default. The AgentCore path sends a versioned, request-scoped scenario to a
+stateless reasoning runtime. AgentCore returns one `RecoveryPlan` candidate (plus a structured
+brief/research result); FastAPI validates it and can send safe validator issues back in another
+invocation, up to the unchanged three-attempt cap. Validation, exact cost, approval, persistence,
+execution, and `RESOLVED` remain application-owned.
+
+Deployment is isolated in `infra/agentcore.yaml` and `scripts/deploy-agentcore.sh`. Runtime
+`daymend_reasoning-nVUAuPG7rz` is deployed and direct initial/research invocations are proven.
+The App Runner integration proved that AgentCore authorizes both the parent runtime ARN and its
+`DEFAULT` endpoint ARN; the least-privilege template names both exact resources. Claude Sonnet
+4.5 then achieved 3/3 valid direct AgentCore planning sessions and a hosted initial plan. The
+hosted lifecycle stopped safely because that fixture did not make Grandma a real dependency.
+The location-aware showcase now models explicit supervised transport, fixed synthetic travel
+time, and driver availability. One bounded local Claude lifecycle produced a valid Grandma-based
+Plan A, triggered grounded research after her decline, and reached deterministic approval and
+`RESOLVED`. The public service remains `single + local` pending one final hosted lifecycle proof.

@@ -25,7 +25,7 @@ from app.agent.recovery_orchestrator import (
     PlanningMode,
     build_recovery_orchestrator,
 )
-from app.fixtures import get_demo_scenario
+from app.fixtures import get_legacy_demo_scenario
 from app.models import PlanValidationState, RecoveryPlan, RecoveryStatus
 from app.observability import LOGGER_NAME
 from app.services import PlanValidator, ValidationErrorCode, create_active_recovery_case
@@ -108,7 +108,7 @@ def replanning_brief(**updates) -> PlanningBrief:
 
 
 def active_case():
-    scenario = get_demo_scenario()
+    scenario = get_legacy_demo_scenario()
     return create_active_recovery_case(
         case_id="case-multi-replan",
         disruption=scenario.disruption,
@@ -149,8 +149,8 @@ def test_initial_multi_agent_flow_uses_brief_then_planner_and_deterministic_repa
     validator = CountingValidator()
 
     result, brief = run_multi_agent_initial_planning(
-        disruption=get_demo_scenario().disruption,
-        scenario=get_demo_scenario(),
+        disruption=get_legacy_demo_scenario().disruption,
+        scenario=get_legacy_demo_scenario(),
         config=config(),
         orchestrator=orchestrator,
         planner=planner,
@@ -160,7 +160,8 @@ def test_initial_multi_agent_flow_uses_brief_then_planner_and_deterministic_repa
     assert len(orchestrator.calls) == 1
     assert orchestrator.calls[0][1] is PlanningBrief
     assert [call[1] for call in planner.calls] == [None, RecoveryPlan, RecoveryPlan]
-    assert brief.model_dump_json() in planner.calls[0][0]
+    assert "Planner input digest:" in planner.calls[0][0]
+    assert '"planning_brief"' in planner.calls[1][0]
     assert validator.calls == 2
     assert result.total_attempts == 2
     assert result.success is True
@@ -169,7 +170,8 @@ def test_initial_multi_agent_flow_uses_brief_then_planner_and_deterministic_repa
     assert result.attempts[0].validation.valid is False
     assert result.attempts[0].proposed_plan.validation_state is PlanValidationState.NOT_VALIDATED
     assert ValidationErrorCode.COVERAGE_GAP.value in planner.calls[2][0]
-    assert "authoritative deterministic validator" in planner.calls[2][0]
+    assert '"previous_candidate"' in planner.calls[2][0]
+    assert "invalid-claim" in planner.calls[2][0]
     assert result.architecture == "multi"
     assert result.orchestrator_invocation_count == 1
     assert result.planner_invocation_count == 3
@@ -184,8 +186,8 @@ def test_orchestrator_cannot_override_authoritative_initial_facts() -> None:
         excluded_caregiver_ids=["invented-caregiver"],
     )
     result, brief = run_multi_agent_initial_planning(
-        disruption=get_demo_scenario().disruption,
-        scenario=get_demo_scenario(),
+        disruption=get_legacy_demo_scenario().disruption,
+        scenario=get_legacy_demo_scenario(),
         config=config(),
         orchestrator=StubOrchestrator(invented),
         planner=StubPlanner([validated_plan_a()]),
@@ -194,8 +196,8 @@ def test_orchestrator_cannot_override_authoritative_initial_facts() -> None:
     assert result.success
     assert brief.recovery_case_id is None
     assert brief.planning_mode is PlanningMode.INITIAL
-    assert brief.required_coverage_window == get_demo_scenario().required_coverage
-    assert brief.affected_windows == [get_demo_scenario().required_coverage]
+    assert brief.required_coverage_window == get_legacy_demo_scenario().required_coverage
+    assert brief.affected_windows == [get_legacy_demo_scenario().required_coverage]
     assert brief.excluded_caregiver_ids == []
 
 
@@ -207,7 +209,7 @@ def test_replanning_brief_receives_deterministic_impact_and_planner_builds_plan_
     result, brief = run_multi_agent_replanning(
         recovery_case=active_case(),
         event=grandma_decline_event(),
-        scenario=get_demo_scenario(),
+        scenario=get_legacy_demo_scenario(),
         config=config(),
         orchestrator=orchestrator,
         planner=planner,
@@ -218,13 +220,16 @@ def test_replanning_brief_receives_deterministic_impact_and_planner_builds_plan_
     assert orchestrator.calls[0][1] is PlanningBrief
     assert brief.planning_mode is PlanningMode.WORLD_STATE_REPLAN
     assert brief.affected_windows == [window(10, 13)]
+    assert len(brief.affected_segments) == 1
     assert brief.excluded_caregiver_ids == ["grandma"]
     assert len(brief.preserved_segments) == 4
     assert brief.triggering_event == grandma_decline_event()
     assert brief.current_active_plan_id == "plan-a"
     assert brief.current_recovery_status is RecoveryStatus.REPLANNING
     assert len(brief.invalidated_assumption_ids) == 1
-    assert brief.model_dump_json() in planner.calls[0][0]
+    assert "Planner input digest:" in planner.calls[0][0]
+    assert '"planning_brief"' in planner.calls[1][0]
+    assert '"preserved_segments"' in planner.calls[1][0]
     assert validator.calls == 2
     assert result.success is True
     assert result.final_plan is not None
@@ -241,7 +246,7 @@ def test_multi_agent_repair_never_exceeds_existing_three_attempt_cap() -> None:
     result, _ = run_multi_agent_replanning(
         recovery_case=active_case(),
         event=grandma_decline_event(),
-        scenario=get_demo_scenario(),
+        scenario=get_legacy_demo_scenario(),
         config=config(),
         orchestrator=StubOrchestrator(replanning_brief()),
         planner=planner,
@@ -256,8 +261,8 @@ def test_orchestrator_decision_prevents_planner_invocation_when_planning_is_decl
     planner = StubPlanner([validated_plan_a()])
     with pytest.raises(RuntimeError, match="declined required childcare planning"):
         run_multi_agent_initial_planning(
-            disruption=get_demo_scenario().disruption,
-            scenario=get_demo_scenario(),
+            disruption=get_legacy_demo_scenario().disruption,
+            scenario=get_legacy_demo_scenario(),
             config=config(),
             orchestrator=StubOrchestrator(initial_brief(planning_required=False)),
             planner=planner,
@@ -295,7 +300,8 @@ def test_gateway_single_mode_executes_only_the_proven_single_agent_path(
     )
 
     gateway = recovery_service.StrandsRecoveryPlanningGateway(config(AgentArchitecture.SINGLE))
-    result = gateway.plan_initial(get_demo_scenario().disruption, get_demo_scenario())
+    scenario = get_legacy_demo_scenario()
+    result = gateway.plan_initial(scenario.disruption, scenario)
 
     assert result.success is True
     assert result.architecture == "single"
@@ -309,8 +315,8 @@ def test_multi_agent_flow_emits_safe_role_and_validation_events(
     caplog.set_level(logging.INFO, logger=LOGGER_NAME)
 
     run_multi_agent_initial_planning(
-        disruption=get_demo_scenario().disruption,
-        scenario=get_demo_scenario(),
+        disruption=get_legacy_demo_scenario().disruption,
+        scenario=get_legacy_demo_scenario(),
         config=config(),
         orchestrator=StubOrchestrator(initial_brief()),
         planner=StubPlanner([validated_plan_a()]),
@@ -326,7 +332,15 @@ def test_multi_agent_flow_emits_safe_role_and_validation_events(
         "planner_validation_succeeded",
         "planner_invocation_completed",
     } <= event_types
-    assert all(event.get("architecture") == "multi" for event in events)
+    assert all(
+        event.get("architecture") == "multi"
+        for event in events
+        if event["event_type"] != "planner_input_prepared"
+    )
+    prepared = [event for event in events if event["event_type"] == "planner_input_prepared"]
+    assert [event["stage"] for event in prepared] == ["context_verification", "proposal"]
+    assert len({event["planner_input_digest"] for event in prepared}) == 1
+    assert all("prompt" not in event and "authoritative_context" not in event for event in prepared)
     assert not any("prompt" in event or "reasoning" in event for event in events)
 
 
@@ -344,8 +358,8 @@ def test_agent_prompts_keep_deterministic_ownership_and_never_persist_reasoning(
 
 def test_live_failure_diagnostics_include_only_safe_validator_fields() -> None:
     result, _ = run_multi_agent_initial_planning(
-        disruption=get_demo_scenario().disruption,
-        scenario=get_demo_scenario(),
+        disruption=get_legacy_demo_scenario().disruption,
+        scenario=get_legacy_demo_scenario(),
         config=config(),
         orchestrator=StubOrchestrator(initial_brief()),
         planner=StubPlanner(
@@ -370,7 +384,7 @@ def test_safe_replanning_brief_summary_excludes_event_message() -> None:
     result, brief = run_multi_agent_replanning(
         recovery_case=active_case(),
         event=grandma_decline_event(),
-        scenario=get_demo_scenario(),
+        scenario=get_legacy_demo_scenario(),
         config=config(),
         orchestrator=StubOrchestrator(replanning_brief()),
         planner=StubPlanner([valid_plan_b()]),

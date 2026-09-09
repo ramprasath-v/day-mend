@@ -51,14 +51,21 @@ export class RecoveryStore {
   submitGrandmaDecline(): void {
     const recovery = this.currentCase();
     if (!recovery) return;
+    const dependentSegments = recovery.active_plan?.coverage_segments.filter(
+      (segment) =>
+        segment.assigned_person_id === 'grandma' || segment.transporter_id === 'grandma',
+    );
+    if (!dependentSegments?.length) return;
+    const starts = dependentSegments.map((segment) => segment.window.start).sort();
+    const ends = dependentSegments.map((segment) => segment.window.end).sort();
     this.run('declining', () =>
       this.api.submitEvent(recovery.recovery_case_id, {
         event_type: 'CAREGIVER_DECLINED',
         caregiver_id: 'grandma',
         occurred_at: new Date().toISOString(),
         relevant_window: {
-          start: '2026-08-27T10:00:00-07:00',
-          end: '2026-08-27T13:00:00-07:00',
+          start: starts[0],
+          end: ends.at(-1)!,
         },
         message: "Sorry, I can't help today.",
         expected_version: recovery.version,

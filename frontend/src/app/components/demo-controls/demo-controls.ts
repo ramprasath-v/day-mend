@@ -18,6 +18,9 @@ export class DemoControlsComponent {
     return (
       !!recovery &&
       recovery.status === 'WAITING_FOR_RESPONSE' &&
+      !!recovery.active_plan?.coverage_segments.some(
+        (segment) => segment.assigned_person_id === 'grandma',
+      ) &&
       !recovery.events.some((event) => event.event_type === 'CAREGIVER_DECLINED')
     );
   }

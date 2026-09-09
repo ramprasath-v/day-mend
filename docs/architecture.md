@@ -349,12 +349,13 @@ The structured event layer is intentionally allow-listed. It records case/plan i
 attempts, validation outcome, latency, model ID, safe tool names, approval/action status, and
 completion. It never accepts raw prompts, messages, credentials, tokens, or hidden reasoning.
 
-AgentCore Runtime was evaluated as the future host for the reasoning boundary, but not deployed.
+AgentCore Runtime was initially evaluated as the future host for the reasoning boundary.
 Its invocation/session contract is not a drop-in replacement for FastAPI's bounded orchestration.
 A safe integration requires a remote `RecoveryPlanningGateway` adapter that preserves structured
 repair and replanning semantics while deterministic validation, persistence, approval, execution,
 and completion remain outside AgentCore. That split is documented in `docs/deployment.md`; the
-working deployment does not falsely claim AgentCore.
+Milestone 6.5C later implemented and deployed that adapter; production still does not falsely
+claim AgentCore while the hosted IAM integration awaits verification.
 
 ## Milestone 6.5A local multi-agent architecture
 
@@ -435,3 +436,44 @@ both remain zero.
 
 No frontend, public API response, production infrastructure, deployment configuration,
 marketplace integration, or AgentCore component changed. Production still runs `single`.
+
+## Milestone 6.5C AgentCore boundary
+
+The AgentCore extraction preserves the same three roles and introduces no fourth agent:
+
+```text
+RecoveryApplicationService
+  → RecoveryPlanningGateway
+      ├→ local: in-process Strands roles
+      └→ agentcore: IAM-signed InvokeAgentRuntime
+            → request-scoped Orchestrator / optional Researcher / Planner
+  → PlanValidator (application, maximum three candidates)
+  → approval / persistence / execution / completion (application)
+```
+
+The serialized `ScenarioContract` is the sole tool context for an invocation. AgentCore rebuilds
+the existing immutable `DemoScenario` and binds it through the existing `ContextVar` scopes; it
+does not keep a second authoritative store. Initial planning and deterministic-invalidation-based
+replanning each return one proposal. If validation fails, the application sends the previous
+candidate and only structured `PlanValidationIssue` fields in a new `PLAN_REPAIR` request.
+
+Every logical invocation receives a UUID request ID, also used as a fresh AgentCore runtime
+session ID. Sessions provide request correlation only: they are not reused as memory and never
+replace the DynamoDB `RecoveryCase`. SDK transport retries are disabled after the first attempt
+to avoid ambiguous duplicate model work; planning retry remains exactly three candidates. The
+read timeout is 110 seconds because the measured local research path took about 54 seconds.
+
+The runtime response has no case status, approval, execution, completion, raw prompt, or reasoning
+field. A runtime cannot mark a case valid or `RESOLVED`. Runtime
+`daymend_reasoning-nVUAuPG7rz` is deployed and direct initial/research reasoning is proven with
+one Orchestrator, one Research Agent, one Planner, seven model calls, and a valid candidate.
+Hosted App Runner authorization proved that invocation checks both the parent runtime and
+`runtime-endpoint/DEFAULT`; the template scopes permission to both exact ARNs. With that policy,
+App Runner later produced a valid Claude initial plan, but the fixed Grandma-decline demo event
+was correctly rejected because that accepted plan did not depend on her. Production was rolled
+back. The final showcase now makes movement explicit: CARE segments have locations, TRANSPORT
+segments carry origin, destination, driver, and supervision time, and deterministic validation
+checks continuity, fixed travel duration, capability, availability, and critical-calendar
+conflicts. A bounded local `multi_research` Claude run proved the complete Grandma-dependent
+Plan A → decline → research → Plan B → approval → `RESOLVED` path. Production remains
+`single + local` until that updated scenario passes one hosted lifecycle.

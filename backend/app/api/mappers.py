@@ -147,6 +147,12 @@ def _plan(plan) -> RecoveryPlanResponse:
                 window=_window(segment.window),
                 assigned_person_id=segment.assigned_person_id,
                 source=segment.source,
+                segment_type=segment.segment_type.value,
+                location_id=segment.location_id,
+                location_label=segment.location_label,
+                destination_location_id=segment.destination_location_id,
+                destination_location_label=segment.destination_location_label,
+                transporter_id=segment.transporter_id,
                 estimated_cost=segment.estimated_cost,
             )
             for segment in plan.coverage_segments
