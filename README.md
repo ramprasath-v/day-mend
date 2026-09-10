@@ -2,329 +2,208 @@
 
 > “When childcare falls through, your whole day shouldn’t.”
 
-DayMend is a childcare disruption recovery agent for working parents. When normal childcare
-unexpectedly falls through, the problem is larger than finding an available babysitter: the
-parent must reconcile coverage windows, calendars, trusted people, handoffs, costs, family
-preferences, approvals, and changing responses while the workday is already beginning.
+DayMend is a childcare disruption recovery agent for working parents, built for the
+**Everyday Agents / Agents for Humans** category. When normal childcare suddenly becomes
+unavailable, DayMend rebuilds the whole day: care coverage, parent calendars, trusted helpers,
+travel and handoffs, cost, approval, execution, and final verification.
 
-DayMend recovers that day end to end. Unlike a backup-care marketplace, it maintains a recovery
-case, gathers the family's relevant context, proposes coordinated coverage and calendar changes,
-reacts when assumptions become false, pauses only for meaningful approval decisions, resumes the
-same case, and verifies that coverage was actually restored.
+It is not a generic family assistant or a backup-care marketplace. DayMend maintains one
+persistent `RecoveryCase`, reacts to real world-state changes, preserves plan segments that still
+work, and pauses only when the parent must make a consequential decision.
 
-## Why an agent
+## Why this needs an agent
 
-Recovery is a changing decision process rather than a fixed lookup. An agent is useful for
-understanding the disruption, choosing which context and tools it needs, reasoning over hard and
-soft preferences, proposing a recovery strategy, and deciding what to repair after an external
-change.
+Childcare recovery is a changing coordination problem, not a lookup. The system must interpret a
+disruption, understand the family’s day, compare feasible combinations, respond when an assumption
+becomes false, and propose a complete new plan.
 
-The agent does not get the final word on safety or completion. Deterministic code must validate
-coverage, trust, availability, overlaps, handoffs, travel feasibility, spending limits, approval
-requirements, action outcomes, and final completion. The LLM proposes a plan; deterministic code
-decides whether it is valid. A case cannot become `RESOLVED` until final deterministic coverage
-verification succeeds.
+DayMend deliberately separates reasoning from authority:
 
-## Recovery loop
+> **Agents propose. Deterministic services own truth.**
 
-1. Record a disruption as a persistent `RecoveryCase`.
-2. Gather current family, calendar, caregiver, availability, and policy context.
-3. Have one Strands Recovery Agent produce a structured `RecoveryPlan`.
-4. Validate all hard constraints deterministically; during initial planning, return structured
-   findings to that same agent for at most two repairs (three proposals total).
-5. Accept only a valid Plan A, then execute valid actions and observe their real outcomes.
-6. Continue, replan from updated state, or request approval as needed.
-7. Resume the same case after a decision or response.
-8. Mark the case `RESOLVED` only after deterministic completion verification.
+- **Agents reason and propose.** They interpret the disruption, coordinate planning, rank feasible
+  options, research synthetic backup care when needed, and produce structured plan candidates.
+- **Deterministic application code owns truth.** It computes feasibility, validates every minute of
+  coverage, enforces caregiver and transport constraints, calculates cost, applies policy, gates
+  execution on approval, and verifies completion.
 
-## Current status
+The model cannot declare its own plan valid. A case cannot become `RESOLVED` until deterministic
+completion verification succeeds.
 
-**Milestone 1 — COMPLETE.** The repository contains one real Strands Recovery Agent, five
-read-only context tools, typed structured plan output, the synthetic primary scenario, and an
-independent deterministic validator. Initial planning now has a bounded validation-and-repair
-loop: context is gathered once, each proposal is validated, and structured findings are returned
-to the same agent for up to three total proposals. A real Nova Pro smoke invoked all five tools,
-repaired two rejected drafts, and reached `valid=true` on attempt 3. The final plan fully covered
-08:00–16:00, respected caregiver availability and parent calendars, cost `$92.00`
-deterministically, and correctly reported `requires_approval=true` against the `$30` automatic
-spend threshold. All offline tests and quality checks pass.
+## The submitted experience
 
-**Milestone 2 — COMPLETE.** A typed caregiver-decline event updates request-local authoritative
-world state, invalidates only matching plan assumptions, calculates impacted and preserved
-segments plus newly uncovered windows, and sends that state to the same Recovery Agent. A real
-Nova Pro smoke produced a deterministically valid Plan B while retaining valid Plan A in history.
+The proven demo follows one continuous recovery:
 
-**Milestone 3 — COMPLETE.** Complete `RecoveryCase`
-aggregates now round-trip through in-memory or DynamoDB repositories. Deterministic policy pauses
-a valid `$92` plan at `APPROVAL_REQUIRED` because it exceeds the `$30` autonomy limit. A later
-approve/reject command reloads and resumes the same versioned case. Approved simulated actions
-execute exactly once, and only the deterministic completion verifier can set `RESOLVED`. A real
-`daymend-recovery-cases-dev` DynamoDB smoke persisted and reloaded the same case through approval,
-four successful actions, completion verification, and final `RESOLVED` state at version 4.
+1. The nanny becomes unavailable.
+2. DayMend builds and deterministically validates Plan A.
+3. Plan A depends on Grandma for part of the day.
+4. Grandma declines, changing authoritative world state.
+5. DayMend identifies invalidated coverage and materially preserved Plan A segments.
+6. Known family options are insufficient, so Backup Care Research runs once.
+7. The Planner proposes a valid Plan B using Harbor Nanny Coop from synthetic provider inventory.
+8. Deterministic cost is `$87.75`, above the family’s `$30` automatic-spend threshold.
+9. DayMend pauses for human approval.
+10. Approval resumes the same `RecoveryCase`; two simulated actions execute successfully.
+11. Deterministic completion verification passes and the case becomes `RESOLVED`.
+12. Reloading the page returns the same versioned case from DynamoDB.
 
-**Milestone 4 — COMPLETE.** A thin FastAPI boundary now exposes health, recovery creation/read,
-external caregiver events, and approval decisions. `RecoveryApplicationService` coordinates the
-existing planning, invalidation, repository, autonomy, execution, and completion services; routes
-contain no recovery policy or persistence logic. The offline HTTP lifecycle reaches `RESOLVED`
-through the real deterministic services, and a live Nova Pro + DynamoDB API smoke resolved the
-same case after Plan B approval.
+The Angular experience streams safe, structured progress during long-running reasoning. It shows
+what DayMend is doing, what changed, which coverage was preserved or replaced, and when the parent
+must decide—without exposing prompts or chain-of-thought.
 
-**Milestone 5 — COMPLETE.** The Angular 20 recovery experience turns the API lifecycle into a
-polished status screen rather than a chatbot. Parents can trigger the synthetic disruption, watch
-Plan A appear, submit Grandma's real decline event, see the invalidated and preserved Plan A
-segments, review Plan B against the automatic-spend boundary, approve or reject, and see
-backend-derived execution plus deterministic `RESOLVED` completion. A live browser smoke used
-Nova Pro and DynamoDB end to end.
+## Architecture
 
-**Milestone 6 — COMPLETE.** DayMend is deployed in `us-east-1` with Angular on private S3 behind
-CloudFront, FastAPI on App Runner, Nova Pro through Strands/Bedrock, and the existing complete
-`RecoveryCase` aggregate in an on-demand DynamoDB table. A public browser smoke created Plan A,
-processed Grandma's decline, invalidated and replanned, paused at the `$30` autonomy boundary,
-approved a fresh `$114` Plan B, completed seven simulated actions, reached `RESOLVED`, and
-restored the same version-6 case after a full page reload. App Runner streams safe structured
-lifecycle and Bedrock telemetry to CloudWatch. AgentCore was seriously evaluated and not
-deployed; the exact boundary decision is in [`docs/deployment.md`](docs/deployment.md).
+![DayMend architecture: Angular and FastAPI application flow, three-agent AgentCore reasoning layer, and deterministic control services](docs/assets/daymend-architecture.png)
 
-**Milestone 6.5A — COMPLETE LOCALLY, NOT DEPLOYED.** An opt-in
-`DAYMEND_AGENT_ARCHITECTURE=multi` path now separates recovery-level orchestration from
-constraint planning. A real Strands Recovery Orchestrator turns authoritative disruption or
-world-change state into a transient `PlanningBrief`; a separate real Strands Constraint Planner
-uses the five context tools and owns `RecoveryPlan` proposal plus validator-feedback repair. A
-live Nova Pro lifecycle produced valid Plan A, deterministically invalidated Grandma's affected
-assumption, preserved five segments, produced valid `$114` Plan B within the unchanged
-three-proposal cap, approved it, completed six simulated actions, and reached deterministic
-`RESOLVED` on the same case at version 6. Production and the default remain `single` pending a
-separate deployment decision.
+```text
+Angular on CloudFront/S3
+        ↓
+FastAPI on App Runner
+        ↓
+RecoveryApplicationService
+        ↓
+Amazon Bedrock AgentCore Runtime (deployed v12)
+        ↓
+Recovery Orchestrator Agent
+        ├── Constraint Planner Agent
+        └── Backup Care Research Agent (only when needed)
+        ↓
+Claude Sonnet 4.5 on Amazon Bedrock
+```
 
-**Milestone 6.5B — COMPLETE LOCALLY, NOT DEPLOYED.** A separate
-`DAYMEND_AGENT_ARCHITECTURE=multi_research` mode adds the third and final reasoning role: a real
-Strands Backup Care Research Agent. Deterministic interval analysis invokes it only when known
-family options cannot cover a required window. Its only tool searches six realistic but fully
-synthetic provider records, deterministically removes hard-ineligible candidates, and leaves
-price, distance, rating, reviews, and prior-use tradeoffs for grounded model ranking. The
-recommended candidate enters authoritative Planner/Validator context; deterministic policy—not
-the Research Agent—requires approval for unfamiliar paid care and/or cost above the automatic
-limit.
+Alongside that reasoning path, deterministic services remain in the FastAPI application:
 
-The controlled Nova Pro proof resolved case
-`daymend-research-f98e0e7b-f47f-45d3-8485-9627c77bc9ef`. Known options left 10:00–12:00
-uncovered. Research considered six candidates, ranked three eligible candidates, and recommended
-`harbor_nanny_coop`. The Planner produced a valid `$142` plan on proposal 1, application code
-assigned `<case>:plan:1`, one approval authorized both consequential reasons, three simulated
-actions succeeded, and deterministic completion set `RESOLVED` at version 5. This is not a
-marketplace integration: provider data is synthetic; Strands reasoning/ranking, validation,
-approval, persistence behavior, and completion are real. Production remains unchanged on
-`single`, and AgentCore remains unimplemented.
+```text
+feasibility normalization → validation → policy/approval → execution guards
+→ completion verification → DynamoDB persistence/versioning
+```
 
-These are deliberately separate mechanisms:
+The production model is the Claude Sonnet 4.5 inference profile:
 
-- **Initial-plan repair:** a draft was never valid; world state is unchanged; validator findings
-  correct the draft.
-- **World-state replanning:** Plan A was valid; a recorded external event changes authoritative
-  facts; deterministic impact analysis begins a new Plan B planning cycle.
+```text
+us.anthropic.claude-sonnet-4-5-20250929-v1:0
+```
 
-Execution still uses simulated explicit actions only; there is no real booking, payment,
-calendar, messaging, authentication, or frontend integration.
+### The three agents
 
-## Preferences, policy, and trust
+1. **Recovery Orchestrator Agent** turns the disruption or world-state change into a focused
+   planning brief and coordinates the reasoning operation.
+2. **Constraint Planner Agent** composes a complete `RecoveryPlan` candidate and repairs only from
+   explicit structured validator feedback when necessary.
+3. **Backup Care Research Agent** ranks eligible records from the synthetic provider fixture only
+   when deterministic interval analysis proves known options cannot cover the affected window.
 
-`FamilyPreferences` contains soft priorities used by the agent to rank otherwise valid plans,
-such as preferring family coverage or fewer handoffs. A preference violation can produce a
-validator warning but cannot make a plan invalid.
+Deterministic services are not additional agents.
 
-`FamilyPolicy` contains hard rules enforced by deterministic code, including caregiver trust,
-whether unapproved caregivers may be used, the automatic-spend boundary, and the minimum
-handoff buffer. `Caregiver.is_trusted` is the sole authoritative trust state for an individual
-caregiver; policy does not duplicate a caregiver allowlist.
+### Feasibility before generation
 
-The automatic-spend limit determines whether a valid proposal would require approval before
-execution. It is not a planning budget: exceeding it does not make an otherwise feasible plan
-invalid, and coverage must never be sacrificed to avoid approval. Milestone 1 reports the
-boundary; Milestone 3 deterministically pauses and resumes execution around it.
+For initial planning, application code converts authoritative schedules, calendars, caregiver
+facts, locations, travel durations, and policy into a `FeasibleAssignmentMatrix`. Its
+`FeasibleTransportPrimitive` entries bind an allowed transporter, permitted window, origin,
+destination, and required duration. Invalid combinations are excluded before the Planner sees
+them, while Claude still chooses how to combine feasible care and transport primitives into a
+whole-day plan.
+
+The independent `PlanValidator` remains the source of truth. A bounded repair loop allows at most
+three plan proposals; the limit and validation rules are never relaxed.
+
+## Responsibility boundary
+
+| Agents may | Deterministic code must |
+| --- | --- |
+| Interpret the disruption | Normalize feasible assignments |
+| Produce the planning brief | Enforce complete continuous coverage |
+| Compose and repair plan candidates | Enforce caregiver trust and availability |
+| Rank feasible synthetic backup options | Validate locations, travel, transport, and handoffs |
+| Recommend next actions | Calculate cost and apply hard family policy |
+| Explain the proposed recovery | Require and record approval |
+|  | Guard idempotent execution |
+|  | Verify completion before `RESOLVED` |
+|  | Persist and version the complete `RecoveryCase` |
+
+## Live Recovery orchestration
+
+FastAPI exposes an SSE progress stream correlated to each mutation by
+`X-DayMend-Progress-ID`. The frontend opens the channel before starting the request, merges the
+HTTP snapshot with streamed events, and deduplicates by event ID. Safe events cover orchestration,
+planning attempts, validator outcomes, repair, research, approval, execution, and completion.
+
+A transient AgentCore connection-establishment or connection-closed failure receives one internal
+transport retry with the same logical request ID and payload. Application errors, validation
+failures, authorization failures, malformed responses, and read timeouts are not retried.
+
+## Hosted proof
+
+- Frontend: <https://d28bm0qb8qheeh.cloudfront.net/>
+- Backend health: <https://5zvgskmgiu.us-east-1.awsapprunner.com/health>
+- Region: `us-east-1`
+- Reasoning runtime: Amazon Bedrock AgentCore, deployed v12
+- Architecture: `multi_research`
+- Model: `us.anthropic.claude-sonnet-4-5-20250929-v1:0`
+- Persistence: DynamoDB table `daymend-demo-recovery-cases`
+
+The final hosted lifecycle produced valid Plan A and Plan B on their first Planner attempts. Plan A
+took about 32.0 seconds server-side; Plan B took about 60.5 seconds and included one Backup Care
+Research invocation. Approval, two simulated execution actions, completion verification,
+`RESOLVED`, SSE progress, and persistence after reload were all verified.
+
+The public demo is unauthenticated and uses synthetic family and provider data.
+
+> **Synthetic-data disclosure:** Harbor Nanny Coop and every backup-care provider record are
+> fictional demo fixtures. DayMend does not integrate with Care.com or any real provider
+> marketplace. Booking, payment, calendar, and messaging actions are simulated.
 
 ## Repository structure
 
 ```text
 .
-├── AGENTS.md
-├── LICENSE
-├── README.md
 ├── backend
 │   ├── app
-│   │   ├── agent
-│   │   ├── api
-│   │   ├── fixtures
-│   │   ├── models
-│   │   ├── repositories
-│   │   ├── services
-│   │   └── tools
-│   ├── tests
-│   └── pyproject.toml
-├── frontend
-│   ├── src/app
-│   ├── angular.json
-│   └── package.json
-├── infra
-│   ├── foundation.yaml
-│   └── service.yaml
-├── scripts
-│   └── deploy-aws.sh
-└── docs
-    ├── architecture.md
-    ├── deployment.md
-    ├── demo-flow.md
-    └── milestones.md
+│   │   ├── agent          # Strands agents and AgentCore contracts
+│   │   ├── api            # FastAPI routes and schemas
+│   │   ├── application    # Recovery lifecycle coordination
+│   │   ├── fixtures       # Synthetic family/provider scenario
+│   │   ├── models         # RecoveryCase and plan contracts
+│   │   ├── repositories   # Memory and DynamoDB persistence
+│   │   ├── services       # Validation, policy, execution, completion
+│   │   └── tools          # Authoritative read-only context tools
+│   └── tests
+├── frontend               # Angular recovery experience and SSE client
+├── infra                  # CloudFormation for AWS resources
+├── scripts                # Existing deployment entry points
+└── docs                    # Architecture, demo, deployment, and milestones
 ```
 
 ## Local setup
 
-Prerequisites: Python 3.11 or newer and
-[`uv`](https://docs.astral.sh/uv/getting-started/installation/).
+The FastAPI backend supports Python 3.11 or newer and uses
+[`uv`](https://docs.astral.sh/uv/) for local dependency management. The deployed AgentCore runtime
+uses Python 3.12.
 
 ```bash
 cd backend
 uv sync --dev
 ```
 
-The project uses `strands-agents` with its native Amazon Bedrock provider. AWS credentials are
-resolved through the normal AWS SDK credential chain and are never stored in this repository.
-Configure a region and, optionally, override the default model:
+AWS credentials are resolved through the normal AWS SDK credential chain and must not be stored in
+the repository. To run the real local three-agent reasoning path, configure Bedrock access:
 
 ```bash
-export AWS_REGION=us-west-2
-export DAYMEND_BEDROCK_MODEL_ID=global.anthropic.claude-sonnet-4-6
+export AWS_REGION=us-east-1
+export DAYMEND_AGENT_RUNTIME=local
+export DAYMEND_AGENT_ARCHITECTURE=multi_research
+export DAYMEND_BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-5-20250929-v1:0
 ```
 
-Your AWS identity must have Bedrock model access and permission to invoke the configured model.
-Run the real planning and validation smoke path from `backend/`:
-
-```bash
-uv run python -m app.agent.demo
-```
-
-Run the live Milestone 2 Plan A → caregiver decline → Plan B smoke:
-
-```bash
-DAYMEND_BEDROCK_MODEL_ID=amazon.nova-pro-v1:0 \
-uv run python -m app.agent.replanning_demo
-```
-
-For DynamoDB-backed Milestone 3 development, configure the table and create it if absent:
-
-```bash
-export DAYMEND_RECOVERY_TABLE=daymend-recovery-cases-dev
-uv run python -m app.repositories.dynamodb_setup
-```
-
-The table uses `recovery_case_id` as its string partition key and on-demand billing. Each case is
-one versioned item whose `payload` is the complete Pydantic JSON aggregate; no secrets or model
-reasoning are stored. Run the live persistence/approval/resume smoke with:
-
-```bash
-DAYMEND_RECOVERY_TABLE=daymend-recovery-cases-dev \
-uv run python -m tests.live_dynamodb_approval_smoke
-```
-
-That harness uses the deterministically validated Milestone 2 test aggregate and proves the real
-DynamoDB/service lifecycle, not fresh model behavior. To combine fresh Nova Pro planning with the
-same DynamoDB lifecycle, run:
-
-```bash
-DAYMEND_BEDROCK_MODEL_ID=amazon.nova-pro-v1:0 \
-DAYMEND_RECOVERY_TABLE=daymend-recovery-cases-dev \
-uv run python -m app.agent.approval_demo
-```
-
-The combined command preserves the strict three-attempt planning cap and may stop before
-persistence if a fresh model session does not produce a valid Plan A or Plan B.
-
-The smoke output contains the configured model ID, tools used, proposal and validation summaries
-for each attempt, and the final safety/cost/autonomy result. It does not expose model
-chain-of-thought.
-
-Run the local opt-in two-agent lifecycle proof without changing the deployed architecture:
-
-```bash
-DAYMEND_AGENT_ARCHITECTURE=multi \
-DAYMEND_BEDROCK_MODEL_ID=amazon.nova-pro-v1:0 \
-AWS_REGION=us-east-1 \
-uv run python -m app.agent.multi_agent_demo
-```
-
-Omitting `DAYMEND_AGENT_ARCHITECTURE` deliberately retains the proven single-agent path.
-
-Run the dedicated three-agent research lifecycle against the synthetic provider fixture:
-
-```bash
-DAYMEND_AGENT_ARCHITECTURE=multi_research \
-DAYMEND_BEDROCK_MODEL_ID=amazon.nova-pro-v1:0 \
-AWS_REGION=us-east-1 \
-uv run python -m app.agent.backup_care_demo
-```
-
-This command performs one controlled lifecycle. It does not retry a failed live run beyond the
-existing three-proposal Planner cap and prints only safe structured diagnostics.
-
-Run the offline tests and quality checks:
-
-```bash
-uv run pytest
-uv run ruff check .
-uv run ruff format --check .
-```
-
-## FastAPI
-
-Run the local API from `backend/` with process-local persistence:
+Start the API with process-local persistence:
 
 ```bash
 export DAYMEND_RECOVERY_REPOSITORY=memory
-export DAYMEND_ALLOWED_ORIGINS=http://localhost:4200
+export DAYMEND_ALLOWED_ORIGINS=http://localhost:4200,http://127.0.0.1:4200
 .venv/bin/uvicorn app.main:app --reload --port 8000
 ```
 
-Use `DAYMEND_RECOVERY_REPOSITORY=dynamodb` plus `DAYMEND_RECOVERY_TABLE` and `AWS_REGION`
-for the AWS demo repository. Planning uses `DAYMEND_BEDROCK_MODEL_ID` through the existing
-Recovery Agent configuration. Startup never creates a DynamoDB table; use the explicit setup
-helper above.
-
-The API exposes:
-
-- `GET /health`
-- `POST /recoveries`
-- `GET /recoveries/{recovery_case_id}`
-- `POST /recoveries/{recovery_case_id}/events`
-- `POST /recoveries/{recovery_case_id}/approvals/{approval_id}`
-
-Interactive OpenAPI documentation is available at `/docs`, with the schema at `/openapi.json`.
-Mutation requests may include `expected_version`; stale versions return `409` without overwriting
-newer state. CORS origins are a comma-separated allowlist and default only to
-`http://localhost:4200`.
-
-Example create request:
-
-```json
-{
-  "disruption_type": "CHILDCARE_UNAVAILABLE",
-  "occurred_at": "2026-08-27T07:02:00-07:00",
-  "caregiver_id": "nanny",
-  "message": "I'm sick and can't come today."
-}
-```
-
-Run the live API lifecycle smoke with:
-
-```bash
-AWS_REGION=us-east-1 \
-DAYMEND_BEDROCK_MODEL_ID=amazon.nova-pro-v1:0 \
-DAYMEND_RECOVERY_REPOSITORY=dynamodb \
-DAYMEND_RECOVERY_TABLE=daymend-recovery-cases-dev \
-.venv/bin/python -m tests.live_api_smoke
-```
-
-## Angular demo UI
-
-Install and run the Angular 20 frontend:
+In another terminal, start Angular:
 
 ```bash
 cd frontend
@@ -332,94 +211,57 @@ npm install
 npm start
 ```
 
-Development uses `http://localhost:8000` from Angular's development environment. Start the
-backend separately with CORS configured for the frontend:
+Development points to `http://localhost:8000`. Production obtains its API URL at runtime from
+`frontend/public/config.js`; the tracked template is intentionally empty and the deployment path
+writes the hosted value into the generated build artifact.
+
+## API surface
+
+- `GET /health`
+- `POST /recoveries`
+- `GET /recoveries/{recovery_case_id}`
+- `POST /recoveries/{recovery_case_id}/events`
+- `POST /recoveries/{recovery_case_id}/approvals/{approval_id}`
+- `GET /progress/{progress_id}`
+- `GET /progress/{progress_id}/stream`
+- `GET /recoveries/{recovery_case_id}/progress`
+
+Mutation requests use optimistic `expected_version` checks where applicable. Approval resumes the
+same case; rejection performs no execution and cannot produce `RESOLVED`.
+
+## Tests and quality
+
+Verified at code freeze:
+
+- Backend: **167 tests passed**
+- Frontend: **24 tests passed**
+- Ruff lint: passed
+- Ruff formatting check: passed
+- Python `compileall`: passed
+- Angular production build: passed
+- `git diff --check`: passed
+
+Run the checks locally:
 
 ```bash
 cd backend
-export DAYMEND_ALLOWED_ORIGINS=http://localhost:4200,http://127.0.0.1:4200
-.venv/bin/uvicorn app.main:app --reload --port 8000
-```
+.venv/bin/python -m pytest
+.venv/bin/ruff check .
+.venv/bin/ruff format --check .
+.venv/bin/python -m compileall -q app tests agentcore_runtime.py
 
-For the live AWS demo, add the Nova Pro, DynamoDB repository, region, and table environment
-variables shown above before starting Uvicorn. Then open `http://localhost:4200`, click
-**Simulate nanny cancellation**, **Simulate Grandma decline**, and the plan-specific approval.
-The UI never fabricates a plan or completion state; it renders each returned `RecoveryCase`.
-
-Production loads its API endpoint from `public/config.js`, which the deployment script generates
-after App Runner is available. No source edit is needed between local and hosted use. The browser
-stores only the current synthetic recovery-case ID and reloads that case from the API after a
-page refresh.
-
-Frontend verification:
-
-```bash
+cd ../frontend
 npm test -- --watch=false --browsers=ChromeHeadless
 npm run build
 ```
 
-## Hosted AWS demo
+## More documentation
 
-- Frontend: <https://d28bm0qb8qheeh.cloudfront.net>
-- Backend health: <https://5zvgskmgiu.us-east-1.awsapprunner.com/health>
-- Region: `us-east-1`
-- Model: `amazon.nova-pro-v1:0`
-- Persistence: `daymend-demo-recovery-cases` (DynamoDB, on demand)
+- [Architecture and safety boundaries](docs/architecture.md)
+- [Proven demo flow](docs/demo-flow.md)
+- [AWS deployment](docs/deployment.md)
+- [Milestone summary](docs/milestones.md)
 
-The demo is public, unauthenticated, and uses synthetic data only. Click **Simulate nanny
-cancellation**, then **Simulate Grandma decline**, approve the plan-specific amount if requested,
-and refresh the page after `RESOLVED` to verify persisted state. Fresh model runs may choose a
-different valid plan and cost; the stable behavior is deterministic coverage validation and an
-approval pause whenever cost exceeds the `$30` automatic-spend limit.
+## License
 
-AWS services used are CloudFormation, ECR, App Runner, Bedrock, DynamoDB, S3, CloudFront,
-CloudWatch Logs, and IAM. Deployment, resource names, least-privilege runtime policy, operations,
-observability evidence, and AgentCore evaluation are documented in
-[`docs/deployment.md`](docs/deployment.md). Reproduce the deployment with:
-
-```bash
-AWS_REGION=us-east-1 \
-DAYMEND_BEDROCK_MODEL_ID=amazon.nova-pro-v1:0 \
-./scripts/deploy-aws.sh
-```
-
-## Roadmap
-
-The planned increments are core Strands planning; plan invalidation and replanning; persistence,
-autonomy, and approval/resume; FastAPI; an Angular recovery UI; AWS deployment and observability;
-and submission polish. Each milestone and its exit criterion is documented in
-[`docs/milestones.md`](docs/milestones.md).
-
-The primary end-to-end scenario is documented in
-[`docs/demo-flow.md`](docs/demo-flow.md), and architectural boundaries are documented in
-[`docs/architecture.md`](docs/architecture.md).
-
-The fixture is deterministic and synthetic. Tool selection and structured plan generation in
-the smoke path are performed by the real Strands/Bedrock agent; no Plan A is hardcoded.
-
-## AgentCore runtime boundary (Milestone 6.5C)
-
-The backend now has separate architecture and runtime switches:
-
-```bash
-DAYMEND_AGENT_ARCHITECTURE=single|multi|multi_research
-DAYMEND_AGENT_RUNTIME=local|agentcore
-DAYMEND_AGENTCORE_RUNTIME_ARN=arn:aws:bedrock-agentcore:...
-```
-
-`local` remains the default. The AgentCore path sends a versioned, request-scoped scenario to a
-stateless reasoning runtime. AgentCore returns one `RecoveryPlan` candidate (plus a structured
-brief/research result); FastAPI validates it and can send safe validator issues back in another
-invocation, up to the unchanged three-attempt cap. Validation, exact cost, approval, persistence,
-execution, and `RESOLVED` remain application-owned.
-
-Deployment is isolated in `infra/agentcore.yaml` and `scripts/deploy-agentcore.sh`. Runtime
-`daymend_reasoning-nVUAuPG7rz` is deployed and direct initial/research invocations are proven.
-The App Runner integration proved that AgentCore authorizes both the parent runtime ARN and its
-`DEFAULT` endpoint ARN; the least-privilege template names both exact resources. Claude Sonnet
-4.5 then achieved 3/3 valid direct AgentCore planning sessions and a hosted initial plan. The
-hosted lifecycle stopped safely because that fixture did not make Grandma a real dependency.
-The location-aware showcase now models explicit supervised transport, fixed synthetic travel
-time, and driver availability. One bounded local Claude lifecycle produced a valid Grandma-based
-Plan A, triggered grounded research after her decline, and reached deterministic approval and
-`RESOLVED`. The public service remains `single + local` pending one final hosted lifecycle proof.
+DayMend is available under the [MIT License](LICENSE).

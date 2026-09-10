@@ -1,202 +1,104 @@
-# DayMend Milestones
+# DayMend milestone summary
 
-## Milestone 1 — Core Strands planning
+This document summarizes the path to the submitted system. Earlier model and architecture
+experiments are historical and are not the current deployment.
 
-**Goal:** A nanny cancellation causes the agent to gather context through tools, produce a
-structured Plan A, and submit it to deterministic validation.
+## 1. Validated childcare recovery plan
 
-**Status:** Complete. All offline tests and quality checks pass. Live Nova Pro execution invoked
-all five tools once, used structured deterministic findings to repair two invalid proposals in
-the same agent conversation, and reached a valid third proposal. The final plan covered the full
-window, respected availability and calendars, and retained the correct autonomy-threshold
-behavior.
+Established the core `RecoveryPlan`, five authoritative context categories, structured model
+output, and an independent deterministic validator. The model proposes; deterministic code checks
+coverage, eligibility, calendars, handoffs, travel, transport, and policy.
 
-**Exit criterion:** An automated test or repeatable local demonstration shows real Strands
-reasoning and tool calls producing a typed `RecoveryPlan`, and the deterministic validator
-accepts a complete valid plan and rejects representative hard-constraint violations.
+## 2. World-state change and replanning
 
-Initial validation repair is limited to three proposals while world state is unchanged. It does
-not include Milestone 2 invalidation or replanning after an external event.
+Added typed external events, assumption invalidation, uncovered-window calculation, preserved
+segments, and Plan B generation on the same recovery lifecycle.
 
-## Milestone 2 — Plan invalidation and replanning
+## 3. Persistent approval and completion
 
-**Goal:** A caregiver decline invalidates the relevant assumption, recomputes the uncovered
-segment, and causes the agent to replan from updated world state.
+Introduced the versioned `RecoveryCase`, in-memory and DynamoDB repositories, deterministic cost
+and autonomy policy, approval/rejection, idempotent simulated execution, and final completion
+verification. `RESOLVED` became reachable only through deterministic verification.
 
-**Status:** Complete. The event, authoritative availability update, targeted assumption
-invalidation, localized impact analysis, Plan A history, same-agent Plan B generation, and
-bounded Plan B validation repair are covered by deterministic tests and a real Nova Pro Plan A →
-Grandma decline → valid Plan B smoke.
+## 4. FastAPI application boundary
 
-**Exit criterion:** A recorded external decline updates the case without a hardcoded branch,
-preserves still-valid plan portions, and produces a newly validated plan for the remaining gap.
+Added the thin HTTP API and `RecoveryApplicationService`. Routes map requests; application
+services coordinate planning, invalidation, policy, persistence, execution, and completion.
 
-Milestone 2 does not execute the plan, persist the case, or implement approval. `EXECUTING`
-indicates that a valid replacement plan is ready for later execution work; it is not completion.
+## 5. Parent-facing Angular experience
 
-## Milestone 3 — Persistence + autonomy + approval/resume
+Built the status-driven recovery UI: disruption action, Plan A, caregiver decline, What Changed,
+Plan B recommendation, approval, execution, resolution, and persistence after reload.
 
-**Goal:** Persist `RecoveryCase` state, apply family policy thresholds, pause for approval, and
-resume the same case after an approve or reject decision.
+## 6. Hosted AWS application
 
-**Status:** Complete. The versioned repository
-boundary, single-item DynamoDB adapter, exact serialization, deterministic autonomy gate,
-idempotent decisions/execution, rejection transition, and completion verifier are covered by the
-full test suite. A real DynamoDB smoke persisted, reloaded, approved, executed, verified, and
-reloaded the same `$92` case as `RESOLVED` with all histories intact.
+Deployed Angular through CloudFront/S3, FastAPI through App Runner, DynamoDB persistence,
+least-privilege IAM, and CloudWatch observability.
 
-**Exit criterion:** A case survives process restart, an over-threshold action cannot execute
-without approval, and both approval outcomes resume the same case with an auditable event trail.
+## 6.5A. Three-agent responsibility split
 
-## Milestone 4 — FastAPI
+Separated durable reasoning responsibilities into exactly three Strands agents:
 
-**Goal:** Expose the real recovery workflow through APIs.
+1. Recovery Orchestrator;
+2. Constraint Planner;
+3. Backup Care Research.
 
-**Status:** Complete. FastAPI routes validate and map HTTP data while a thin application service
-coordinates the existing workflow boundaries. Offline API tests cover health, create/read,
-caregiver decline and replanning, approval/rejection/idempotency, concurrency, safe responses,
-CORS, OpenAPI, and a complete same-case lifecycle to `RESOLVED`. A live FastAPI → Nova Pro →
-DynamoDB smoke created and resolved case `d436c360-bda5-4625-9521-67d8932f87b0`, with one
-invalidated assumption, valid `plan_B`, a persisted approval, five successful simulated actions,
-and final version 6.
+Deterministic services remained application code rather than becoming extra agents. Local and
+remote repair paths were unified around one explicit `PlannerInvocationInput` so correctness no
+longer depends on conversation history.
 
-**Exit criterion:** Documented FastAPI endpoints can create/read a recovery case, accept
-external events and approval decisions, advance the actual workflow, and pass API tests.
+## 6.5B. Conditional synthetic backup-care research
 
-## Milestone 5 — Angular recovery UI
+Added deterministic known-option exhaustion detection and conditional research over synthetic
+provider inventory. Hard eligibility remains deterministic; the research agent ranks eligible
+options. There is no Care.com or real provider-marketplace integration.
 
-**Goal:** Show the disruption, recovery progress, plan changes, approval decision, and resolved
-outcome without a chatbot UI.
+## 6.5C. AgentCore production reasoning
 
-**Status:** Complete. Angular 20 standalone components, a typed API service, and a signal-based
-store render the normal day, backend-driven recovery states, meaningful event timeline, friendly
-coverage plan, Plan A invalidation/preservation, Plan B, approval boundary, execution results,
-and verified completion. Ten Chrome unit tests and the production build pass. A live browser
-flow reached Nova Pro, DynamoDB, approval, two successful simulated actions, and `RESOLVED` on
-case `d8c9ebdb-b1ac-423b-b6e3-67e20eb8fc92` at version 6.
+Moved only the three-agent reasoning layer into Amazon Bedrock AgentCore Runtime. The deployed v12
+runtime uses Python 3.12 and Claude Sonnet 4.5 via
+`us.anthropic.claude-sonnet-4-5-20250929-v1:0`.
 
-**Exit criterion:** A parent can follow and act on the primary demo scenario end to end in a
-workflow/status interface that accurately reflects backend state.
+App Runner retains the authoritative lifecycle, validator, approval, execution, completion, and
+DynamoDB persistence. Runtime requests are versioned and stateless. One narrow transport retry
+protects connection-establishment/connection-closed failures without retrying ambiguous or
+application-level failures.
 
-## Milestone 6 — AWS deployment + observability
+## Final reliability and demo polish
 
-**Goal:** Deploy the existing Angular/FastAPI recovery workflow with real Strands, Bedrock,
-DynamoDB, scoped IAM, production configuration, and CloudWatch evidence; deploy AgentCore only
-if it preserves the proven workflow without a major rewrite.
+Initial planning now uses a generic `FeasibleAssignmentMatrix` and explicit
+`FeasibleTransportPrimitive` records derived from authoritative data. This removed duplicated raw
+initial context and excludes impossible caregiver/transport combinations without constructing the
+answer for Claude.
 
-**Status:** Complete. CloudFormation deploys private S3 + CloudFront, ECR + App Runner, and the
-on-demand `daymend-demo-recovery-cases` table. The public browser flow created Plan A, processed
-Grandma's decline, produced a valid Plan B, requested and accepted plan-specific approval,
-completed seven simulated actions, reached `RESOLVED`, and restored the same version-6 case after
-a full page reload. The active App Runner stream contains allow-listed JSON lifecycle events and
-real Nova Pro model/tool/latency evidence. Backend tests increased to 88 and Angular tests to 10.
-Production CORS and runtime API configuration are verified, and the repository secret scan is
-clean after review of one intentional fake redaction-test sentinel.
+The final hosted proof achieved:
 
-**AgentCore decision:** **EVALUATED — NOT DEPLOYED.** AgentCore Runtime can host the Strands
-reasoning component, but the current workflow performs bounded structured calls around
-deterministic validation, request-local tool context, persistence, approval, and completion.
-Extracting a remote reasoning gateway plus session/auth/retry semantics is a significant
-architecture change; deploying the whole FastAPI service would put deterministic rules in the
-wrong boundary. The working App Runner + in-process Strands/Bedrock deployment is retained. See
-`docs/deployment.md` for the exact evaluation.
+- valid Plan A on Planner attempt 1, about 32.0 seconds server-side;
+- a real Grandma-dependent plan and decline event;
+- material preservation/invalidation of Plan A segments;
+- one Backup Care Research invocation;
+- valid Plan B on Planner attempt 1, about 60.5 seconds;
+- Harbor Nanny Coop selected from fictional provider inventory;
+- deterministic cost `$87.75` and approval above `$30`;
+- two successful simulated actions;
+- deterministic completion, `RESOLVED`, and persistence after reload;
+- healthy SSE live progress and no browser console errors.
 
-**Exit criterion:** The primary scenario runs in a deployed environment with persistent state,
-searchable logs/metrics and documented operations; an explicit decision records whether
-AgentCore is used.
+The editorial frontend, responsive Plan B recommendation, rejection behavior, and DayMend favicon
+were verified in production. At code freeze, 167 backend tests and 24 frontend tests passed.
 
-## Milestone 6.5A — Recovery orchestration + constraint planning
+## Submitted state
 
-**Goal:** Prove two materially distinct Strands reasoning roles without changing the deterministic
-safety boundary or deployed product behavior.
+The application code is frozen. Current production is:
 
-**Status:** Complete locally; not deployed. The real Recovery Orchestrator produces a transient,
-authoritatively normalized `PlanningBrief`, while the real Constraint Planner owns Plan A/Plan B
-construction and the unchanged three-proposal validator-repair loop. The single-agent path remains
-the default and production architecture.
+```text
+CloudFront/S3 Angular
+→ App Runner FastAPI
+→ RecoveryApplicationService
+→ AgentCore v12
+→ 3 Strands agents
+→ Claude Sonnet 4.5
 
-A single live Nova Pro lifecycle used case
-`daymend-multi-dda7ca5c-3b15-47ce-bc56-48699635e332`. Initial planning reached valid `$92` Plan A
-on attempt 2. Grandma's typed decline deterministically invalidated one assumption and preserved
-five plan segments. The replanning Orchestrator ran from that changed state, and the Planner
-reached valid `$114` Plan B on attempt 3. Deterministic policy requested approval, approval resumed
-the same case, all six simulated actions succeeded, and `CompletionVerifier` set `RESOLVED` at
-version 6. The final reporting serializer failed after resolution because it expected the initial
-result's attempt field name; that local reporting bug is fixed and regression-tested without a
-second live run.
-
-**Exit criterion:** Both real Strands agents participate in initial and world-change planning; a
-live same-case lifecycle reaches deterministic `RESOLVED`; single-agent fallback, validator rules,
-retry cap, approval, execution, and completion remain unchanged.
-
-## Milestone 6.5B — Backup care research
-
-**Goal:** Add the third and final reasoning role only for recovery gaps that current known options
-cannot cover, while retaining deterministic eligibility, validation, approval, and completion.
-
-**Status:** Complete locally; not deployed. `multi_research` adds a real Strands Backup Care
-Research Agent with only the `search_backup_care` tool. A dedicated fixture leaves 10:00–12:00
-uncovered after considering both parents and known caregivers. Deterministic search evaluates six
-synthetic provider records and exposes three eligible candidates for meaningful soft-preference
-ranking. Grounding checks reject invented or omitted eligible IDs before the recommendation can
-reach the Constraint Planner.
-
-The one controlled Nova Pro lifecycle used case
-`daymend-research-f98e0e7b-f47f-45d3-8485-9627c77bc9ef`. The Research Agent ranked
-`harbor_nanny_coop`, `willow_family_care`, and `bright_start_agency`, recommending
-`harbor_nanny_coop`. The Planner's first proposal passed unchanged `PlanValidator` at `$142`.
-Application code assigned
-`daymend-research-f98e0e7b-f47f-45d3-8485-9627c77bc9ef:plan:1`; deterministic policy requested
-approval for above-limit cost and unfamiliar paid care. Approval resumed the same case, all
-three simulated reservations succeeded, and `CompletionVerifier` set `RESOLVED` at version 5.
-
-The run recorded one Orchestrator invocation, one Research Agent invocation, one research tool
-call, two Planner invocations, seven total Bedrock cycles, and 53,952 ms total latency. Role
-latencies were 7,110 ms, 29,810 ms, and 16,650 ms respectively. The prior 6.5A run did not retain
-exact role/cycle timing, so the honest architectural comparison is one additional conditional
-research role and tool call, with zero research overhead on sufficient known-option scenarios.
-
-**Exit criterion:** Exactly three specialized Strands roles participate when research is needed;
-hard eligibility and approval remain deterministic; grounded researched care reaches a valid
-accepted plan and verified completion; `single` and `multi` regressions remain green; production
-and AgentCore remain unchanged.
-
-## Milestone 6.5C — Amazon Bedrock AgentCore Runtime
-
-**Goal:** Host only the existing multi-agent reasoning layer in AgentCore while App Runner remains
-authoritative for deterministic validation and the complete `RecoveryCase` lifecycle.
-
-**Status:** Runtime deployed and direct reasoning proven; final hosted lifecycle still pending,
-so the milestone is not complete. The
-versioned request/response contracts, stateless runtime entry point, local/AgentCore gateway
-selection, application-side remote repair loop, application-side deterministic invalidation,
-IAM-scoped CloudFormation, isolated packaging script, and regression suite are present. Runtime
-`daymend_reasoning-nVUAuPG7rz` successfully ran direct initial and research requests. The research
-proof used one Orchestrator, one Research Agent, one Planner, seven model calls, and returned a
-candidate accepted by deterministic validation. Production configuration remains `single + local`.
-
-Two bounded App Runner checks identified the exact IAM contract: AgentCore authorizes both the
-parent runtime and its `DEFAULT` endpoint. Parent-only and endpoint-only policies each failed the
-complementary check before runtime execution. The template now lists both exact ARNs, but the
-public service was rolled back to `local + single` and health-verified. The corrected dual-resource
-policy proved hosted invocation, and Claude Sonnet 4.5 achieved 3/3 direct planning reliability
-plus a valid hosted Plan A. That lifecycle stopped because the old synthetic facts allowed a plan
-without Grandma, making the fixed decline event inapplicable. The revised showcase adds explicit
-locations, supervised transport, deterministic 15-minute travel, and parent/caregiver transport
-capability. One bounded local Claude run produced valid Grandma-dependent Plan A, triggered the
-existing Research Agent after her decline, produced valid Plan B, crossed the unchanged approval
-boundary, and reached `RESOLVED`. Production remains `local + single`; hosted replanning, browser,
-and persistence proof remain pending.
-
-**Exit criterion:** The isolated runtime and research flow are live-verified; App Runner invokes it
-with IAM; remote Plan A/repair/Plan B retain application validation; a hosted same-case lifecycle
-reaches persisted `RESOLVED`; rollback to local is verified before any production switch.
-
-## Milestone 7 — Submission polish
-
-**Goal:** Prepare the architecture diagram, README, tests, public repository, license, demo
-video, and Devpost submission.
-
-**Exit criterion:** Submission materials accurately describe the verified build, the public
-repository is runnable from its documentation, the demo video shows the primary scenario, and
-all event requirements have been checked before submission.
+Deterministic feasibility, validation, policy, execution,
+completion, and DynamoDB persistence remain application-owned.
+```
