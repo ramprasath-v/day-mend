@@ -8,7 +8,13 @@ from uuid import uuid4
 
 import boto3
 from botocore.config import Config
-from botocore.exceptions import BotoCoreError, ClientError
+from botocore.exceptions import (
+    BotoCoreError,
+    ClientError,
+    ConnectionClosedError,
+    ConnectTimeoutError,
+    EndpointConnectionError,
+)
 
 from app.agent.config import RecoveryAgentConfig
 from app.agent.recovery_agent import (
@@ -39,6 +45,13 @@ class AgentCoreInvocationError(RuntimeError):
     """Safe transport failure that exposes no SDK payload or credentials."""
 
 
+_RETRYABLE_AGENTCORE_TRANSPORT_ERRORS = (
+    ConnectionClosedError,
+    ConnectTimeoutError,
+    EndpointConnectionError,
+)
+
+
 class RuntimeInvoker(Protocol):
     def invoke(self, request: AgentRuntimeRequest) -> AgentRuntimeResponse: ...
 
@@ -67,37 +80,50 @@ class AgentCoreClient:
 
     def invoke(self, request: AgentRuntimeRequest) -> AgentRuntimeResponse:
         started = perf_counter()
+        request_payload = request.model_dump_json().encode()
         log_event(
             "agentcore_invocation_started",
             request_id=request.request_id,
             recovery_case_id=request.recovery_case_id,
             operation=request.operation,
         )
-        try:
-            raw = self._client.invoke_agent_runtime(
-                agentRuntimeArn=self.runtime_arn,
-                runtimeSessionId=request.request_id,
-                payload=request.model_dump_json().encode(),
-            )
-            body = raw["response"]
-            payload = body.read() if hasattr(body, "read") else body
-            if isinstance(payload, bytes):
-                payload = payload.decode("utf-8")
-            response = AgentRuntimeResponse.model_validate_json(payload)
-            if response.request_id != request.request_id:
-                raise AgentCoreInvocationError("AgentCore response request_id did not match")
-        except AgentCoreInvocationError:
-            raise
-        except (BotoCoreError, ClientError, KeyError, TypeError, ValueError) as exc:
-            log_event(
-                "agentcore_invocation_failed",
-                request_id=request.request_id,
-                recovery_case_id=request.recovery_case_id,
-                operation=request.operation,
-                duration_ms=round((perf_counter() - started) * 1000),
-                error_type=type(exc).__name__,
-            )
-            raise AgentCoreInvocationError("AgentCore reasoning invocation failed safely") from exc
+        for transport_attempt in range(2):
+            try:
+                raw = self._client.invoke_agent_runtime(
+                    agentRuntimeArn=self.runtime_arn,
+                    runtimeSessionId=request.request_id,
+                    payload=request_payload,
+                )
+                body = raw["response"]
+                response_payload = body.read() if hasattr(body, "read") else body
+                if isinstance(response_payload, bytes):
+                    response_payload = response_payload.decode("utf-8")
+                response = AgentRuntimeResponse.model_validate_json(response_payload)
+                if response.request_id != request.request_id:
+                    raise AgentCoreInvocationError("AgentCore response request_id did not match")
+                break
+            except AgentCoreInvocationError:
+                raise
+            except _RETRYABLE_AGENTCORE_TRANSPORT_ERRORS as exc:
+                if transport_attempt == 0:
+                    log_event(
+                        "agentcore_transport_retry",
+                        request_id=request.request_id,
+                        recovery_case_id=request.recovery_case_id,
+                        operation=request.operation,
+                        retry_number=1,
+                        error_type=type(exc).__name__,
+                    )
+                    continue
+                self._log_failure(request, started, exc)
+                raise AgentCoreInvocationError(
+                    "AgentCore reasoning invocation failed safely"
+                ) from exc
+            except (BotoCoreError, ClientError, KeyError, TypeError, ValueError) as exc:
+                self._log_failure(request, started, exc)
+                raise AgentCoreInvocationError(
+                    "AgentCore reasoning invocation failed safely"
+                ) from exc
         log_event(
             "agentcore_invocation_completed",
             request_id=request.request_id,
@@ -105,8 +131,27 @@ class AgentCoreClient:
             operation=request.operation,
             duration_ms=round((perf_counter() - started) * 1000),
             response_status="success",
+            orchestrator_invocation_count=response.metrics.orchestrator_invocation_count,
+            research_agent_invocation_count=response.metrics.research_agent_invocation_count,
+            planner_invocation_count=response.metrics.planner_invocation_count,
+            model_call_count=response.metrics.model_call_count,
         )
         return response
+
+    @staticmethod
+    def _log_failure(
+        request: AgentRuntimeRequest,
+        started: float,
+        exc: Exception,
+    ) -> None:
+        log_event(
+            "agentcore_invocation_failed",
+            request_id=request.request_id,
+            recovery_case_id=request.recovery_case_id,
+            operation=request.operation,
+            duration_ms=round((perf_counter() - started) * 1000),
+            error_type=type(exc).__name__,
+        )
 
 
 class AgentCoreRuntimeGateway:
@@ -133,6 +178,7 @@ class AgentCoreRuntimeGateway:
                 disruption=disruption,
             )
         )
+        self._log_research_response(response)
         planning_scenario = scenario
         if response.researched_candidate is not None:
             planning_scenario = add_researched_caregiver(scenario, response.researched_candidate)
@@ -186,6 +232,7 @@ class AgentCoreRuntimeGateway:
                 replanning_context=context,
             )
         )
+        self._log_research_response(response)
         validation_scenario = outcome.updated_scenario
         if response.researched_candidate is not None:
             validation_scenario = add_researched_caregiver(
@@ -223,7 +270,34 @@ class AgentCoreRuntimeGateway:
         attempts: list[PlanningAttempt] = []
         current = first
         for attempt_number in range(1, MAX_PLAN_ATTEMPTS + 1):
+            phase = (
+                "initial_planning"
+                if first.operation is RuntimeOperation.INITIAL_PLANNING
+                else "replanning"
+            )
+            attempt_fields = {
+                "architecture": self._config.architecture.value,
+                "agent_role": "constraint_planner",
+                "planning_mode": phase,
+                "recovery_case_id": recovery_case_id,
+                "model_id": self._config.model_id,
+                "operation": current.operation,
+                "attempt_number": attempt_number,
+                "plan_id": current.plan_candidate.plan_id,
+            }
+            log_event("plan_proposed", **attempt_fields)
+            log_event("validation_started", **attempt_fields)
             validation = self._validator.validate(current.plan_candidate, validation_scenario)
+            validation_fields = {
+                **attempt_fields,
+                "valid": validation.valid,
+                "issue_count": len(validation.issues),
+                "issue_codes": [issue.code for issue in validation.issues],
+            }
+            log_event(
+                "planner_validation_succeeded" if validation.valid else "planner_validation_failed",
+                **validation_fields,
+            )
             attempts.append(
                 PlanningAttempt(
                     attempt_number=attempt_number,
@@ -234,6 +308,14 @@ class AgentCoreRuntimeGateway:
             )
             if validation.valid or attempt_number == MAX_PLAN_ATTEMPTS:
                 break
+            log_event(
+                "plan_repair_started",
+                **{
+                    **validation_fields,
+                    "operation": RuntimeOperation.PLAN_REPAIR,
+                    "attempt_number": attempt_number + 1,
+                },
+            )
             current = self._invoker.invoke(
                 self._request(
                     RuntimeOperation.PLAN_REPAIR,
@@ -247,6 +329,33 @@ class AgentCoreRuntimeGateway:
             )
             responses.append(current)
         return attempts, responses
+
+    @staticmethod
+    def _log_research_response(response: AgentRuntimeResponse) -> None:
+        research = response.backup_care_research
+        if research is None:
+            return
+        fields = {
+            "architecture": "multi_research",
+            "agent_role": "backup_care_researcher",
+            "planning_mode": (
+                "initial"
+                if response.operation is RuntimeOperation.INITIAL_PLANNING
+                else "replanning"
+            ),
+            "recovery_case_id": response.recovery_case_id,
+            "candidate_count": len(research.considered_candidate_ids),
+            "eligible_candidate_count": len(research.eligible_candidate_ids),
+        }
+        log_event("known_options_exhausted", **fields)
+        log_event("backup_research_started", **fields)
+        log_event("backup_candidates_received", **fields)
+        log_event(
+            "backup_candidate_recommended",
+            **fields,
+            research_id=research.research_id,
+            recommended_candidate_id=research.recommended_candidate_id,
+        )
 
     def _request(
         self,

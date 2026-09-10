@@ -2,12 +2,12 @@
   display: block;
 }
 .timeline {
-  padding: 1.6rem;
+  padding: 1.2rem;
 }
 .eyebrow {
-  margin: 0 0 0.3rem;
+  margin: 0 0 0.2rem;
   color: var(--green);
-  font-size: 0.68rem;
+  font-size: 0.82rem;
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -15,18 +15,18 @@
 h2 {
   margin: 0;
   font-family: var(--serif);
-  font-size: 1.5rem;
+  font-size: 1.8rem;
   font-weight: 600;
 }
 ol {
-  margin: 1.2rem 0 0;
+  margin: 0.9rem 0 0;
   padding: 0;
   list-style: none;
 }
 li {
   display: grid;
-  grid-template-columns: 18px 68px 1fr;
-  min-height: 65px;
+  grid-template-columns: 24px minmax(0, 1fr);
+  min-height: 72px;
 }
 .timeline__rail {
   align-self: stretch;
@@ -35,41 +35,55 @@ li {
   align-items: center;
 }
 .timeline__rail span {
-  width: 9px;
-  height: 9px;
-  margin-top: 5px;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
   border-radius: 50%;
-  background: var(--green);
-  box-shadow: 0 0 0 4px #e4ece5;
+  background: #dfece2;
+  color: var(--green);
+  font-size: 0.62rem;
+  font-weight: 900;
 }
 li[data-state='changed'] .timeline__rail span {
-  background: var(--amber);
-  box-shadow: 0 0 0 4px #f7ead2;
+  background: #f7e5c6;
+  color: #8b5e17;
 }
 li[data-state='pending'] .timeline__rail span {
-  background: #fff;
-  border: 2px solid var(--amber);
-  box-shadow: 0 0 0 4px #f7ead2;
+  border: 1px solid var(--amber);
+  background: #fffaf0;
+  color: var(--amber);
 }
 .timeline__rail i {
   flex: 1;
   width: 1px;
-  margin-top: 5px;
+  min-height: 24px;
+  margin: 3px 0;
   background: var(--line);
 }
-time {
-  padding-top: 1px;
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 0.68rem;
+.timeline__actor {
+  display: block;
+  margin-bottom: 0.08rem;
+  color: var(--green);
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 li strong {
-  display: block;
-  font-size: 0.86rem;
+  display: inline;
+  font-size: 1rem;
 }
 li p {
-  margin: 0.25rem 0 0;
+  margin: 0.15rem 0 0;
   color: var(--muted);
-  font-size: 0.74rem;
-  line-height: 1.45;
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+time {
+  display: block;
+  margin-top: 0.15rem;
+  color: #8a948e;
+  font-family: var(--mono);
+  font-size: 0.8rem;
 }

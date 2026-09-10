@@ -5,11 +5,15 @@
       <strong>DayMend</strong>
     </a>
     <p>When childcare falls through, <span>your whole day shouldn’t.</span></p>
-    <div class="system-proof"><span></span> Recovery system online</div>
+    <div class="system-proof"><span></span> Ready when plans change</div>
   </header>
 
   <main id="main">
-    <app-recovery-hero [recovery]="store.currentCase()" [loadingMessage]="store.loadingMessage()" />
+    <app-recovery-hero
+      [recovery]="store.currentCase()"
+      [busy]="store.loading()"
+      (resetDemo)="store.resetDemo()"
+    />
 
     @if (store.error(); as error) {
       <div class="error-banner" role="alert">
@@ -21,41 +25,104 @@
       </div>
     }
 
-    <app-demo-controls
-      [recovery]="store.currentCase()"
-      [busy]="store.loading()"
-      (start)="store.startRecovery()"
-      (decline)="store.submitGrandmaDecline()"
-      (refresh)="store.refresh()"
-    />
+    @if (store.loading()) {
+      <app-live-recovery
+        [events]="store.progressEvents()"
+        [busy]="true"
+        [connected]="store.progressConnected()"
+        [elapsedSeconds]="store.elapsedSeconds()"
+      />
+      @if (store.currentCase()?.active_plan; as plan) {
+        <div class="working-plan">
+          <app-coverage-plan
+            [plan]="plan"
+            [badge]="store.currentCase()!.previous_plans.length ? 'Recovery Plan B' : 'Recovery Plan A'"
+            [automaticSpendLimit]="store.currentCase()!.automatic_spend_limit"
+            [previousPlan]="store.currentCase()!.previous_plans.at(-1) ?? null"
+            [invalidatedAssumptions]="store.currentCase()!.invalidated_assumptions"
+            [requiresApproval]="store.currentCase()!.requires_approval"
+          />
+        </div>
+      }
+    } @else {
+      <app-demo-controls
+        [recovery]="store.currentCase()"
+        [busy]="store.loading()"
+        (start)="store.startRecovery()"
+        (decline)="store.submitGrandmaDecline()"
+        (refresh)="store.refresh()"
+      />
+    }
 
+    @if (!store.loading()) {
     @if (store.currentCase(); as recovery) {
-      @if (recovery.invalidated_assumptions.length) {
+      @if (recovery.approval_history.at(-1)?.status === 'REJECTED') {
+        <section class="rejection-banner" aria-labelledby="rejection-title">
+          <span aria-hidden="true">×</span>
+          <div>
+            <p class="eyebrow">Recovery not approved</p>
+            <h2 id="rejection-title">No recovery actions were taken</h2>
+            <p>The declined plan will not execute. This case remains open for another option.</p>
+          </div>
+        </section>
+      }
+      @if (recovery.invalidated_assumptions.length && recovery.status !== 'RESOLVED') {
         <app-plan-change [recovery]="recovery" />
       }
+      <app-live-recovery
+        [events]="store.progressEvents()"
+        [busy]="false"
+        [connected]="store.progressConnected()"
+        [elapsedSeconds]="store.elapsedSeconds()"
+      />
       @if (recovery.pending_approval) {
-        <app-approval-card
-          [recovery]="recovery"
-          [busy]="store.loading()"
-          (approve)="store.decideApproval('APPROVE')"
-          (reject)="store.decideApproval('REJECT')"
-        />
-      }
-      <div class="content-grid">
-        <app-recovery-timeline [recovery]="recovery" />
-        @if (recovery.active_plan) {
-          <app-coverage-plan
-            [plan]="recovery.active_plan"
-            [badge]="recovery.previous_plans.length ? 'Recovery Plan B' : 'Recovery Plan A'"
+        <div class="decision-grid">
+          <app-approval-card
+            [recovery]="recovery"
+            [busy]="store.loading()"
+            (approve)="store.decideApproval('APPROVE')"
+            (reject)="store.decideApproval('REJECT')"
           />
-        }
-      </div>
-      <app-execution-progress [recovery]="recovery" />
-      <app-resolved-summary [recovery]="recovery" />
+          @if (recovery.active_plan) {
+            <app-coverage-plan
+              [plan]="recovery.active_plan"
+              badge="Recovery Plan B"
+              [automaticSpendLimit]="recovery.automatic_spend_limit"
+              [previousPlan]="recovery.previous_plans.at(-1) ?? null"
+              [invalidatedAssumptions]="recovery.invalidated_assumptions"
+              [requiresApproval]="recovery.requires_approval"
+            />
+          }
+        </div>
+      } @else {
+        <div class="content-grid">
+          @if (recovery.active_plan) {
+            <app-coverage-plan
+              [plan]="recovery.active_plan"
+              [badge]="
+                recovery.approval_history.at(-1)?.status === 'REJECTED'
+                  ? 'Plan B not approved'
+                  : recovery.previous_plans.length
+                    ? 'Recovery Plan B'
+                    : 'Recovery Plan A'
+              "
+              [automaticSpendLimit]="recovery.automatic_spend_limit"
+              [previousPlan]="recovery.previous_plans.at(-1) ?? null"
+              [invalidatedAssumptions]="recovery.invalidated_assumptions"
+              [requiresApproval]="recovery.requires_approval"
+            />
+          }
+          <div class="case-facts card">
+          <p class="eyebrow">Saved with your day</p>
+            <strong>{{ recovery.status === 'RESOLVED' ? 'Coverage verified' : 'Plan ready' }}</strong>
+            <p>Plan history, events, approval, and execution results remain attached to this case.</p>
+          </div>
+        </div>
+      }
     } @else {
       <section class="before-grid" aria-label="Normal day context">
         <article class="card normal-day">
-          <p class="eyebrow">Today · before disruption</p>
+          <p class="eyebrow">Today, before anything changes</p>
           <h2>One continuous care window</h2>
           <div class="normal-day__coverage">
             <time>8:00 AM</time><span><i></i></span><strong>Nanny</strong
@@ -66,8 +133,8 @@
           </p>
         </article>
         <article class="card proof-card">
-          <p class="eyebrow">How recovery works</p>
-          <h2>Capable when needed. Quiet when not.</h2>
+          <p class="eyebrow">If care falls through</p>
+          <h2>DayMend finds the shape of a workable day.</h2>
           <ul>
             <li><span>01</span> Checks today’s schedule and calendars</li>
             <li><span>02</span> Compares known, trusted caregivers</li>
@@ -77,19 +144,22 @@
         </article>
       </section>
     }
+    }
 
-    <section class="agent-proof" aria-label="How DayMend makes a recovery">
-      <div>
-        <p class="eyebrow">Under the hood</p>
-        <h2>One recovery agent. Deterministic safeguards.</h2>
+    <details class="technical-details">
+      <summary>How DayMend works</summary>
+      <div class="technical-details__content">
+        <strong>AgentCore · 3 Strands agents · Claude Sonnet 4.5</strong>
+        <p>
+          Recovery Orchestrator, Backup Care Research, and Constraint Planner run through Amazon
+          Bedrock AgentCore with Claude Sonnet 4.5.
+        </p>
+        <p>
+          Coverage validation, approval boundaries, execution, completion verification, and the
+          DynamoDB-persisted recovery case remain deterministic and application-owned.
+        </p>
       </div>
-      <ul>
-        <li><span>✓</span> Strands Recovery Agent</li>
-        <li><span>✓</span> Amazon Nova Pro</li>
-        <li><span>✓</span> Persistent recovery case</li>
-        <li><span>✓</span> Verified coverage before completion</li>
-      </ul>
-    </section>
+    </details>
   </main>
   <footer>
     <span>DayMend</span>

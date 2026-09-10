@@ -159,9 +159,14 @@ def test_initial_multi_agent_flow_uses_brief_then_planner_and_deterministic_repa
 
     assert len(orchestrator.calls) == 1
     assert orchestrator.calls[0][1] is PlanningBrief
-    assert [call[1] for call in planner.calls] == [None, RecoveryPlan, RecoveryPlan]
-    assert "Planner input digest:" in planner.calls[0][0]
-    assert '"planning_brief"' in planner.calls[1][0]
+    assert [call[1] for call in planner.calls] == [RecoveryPlan, RecoveryPlan]
+    assert '"planning_brief"' in planner.calls[0][0]
+    assert '"feasible_assignment_matrix"' in planner.calls[0][0]
+    assert '"soft_ranking_preferences"' in planner.calls[0][0]
+    assert '"authoritative_context"' not in planner.calls[0][0]
+    assert '"transport_primitives"' in planner.calls[0][0]
+    assert "Compose the plan only from FeasibleAssignmentMatrix" in planner.calls[0][0]
+    assert "do not invent or combine transport fields across primitives" in planner.calls[0][0]
     assert validator.calls == 2
     assert result.total_attempts == 2
     assert result.success is True
@@ -169,12 +174,14 @@ def test_initial_multi_agent_flow_uses_brief_then_planner_and_deterministic_repa
     assert result.final_plan.plan_id == "plan-a"
     assert result.attempts[0].validation.valid is False
     assert result.attempts[0].proposed_plan.validation_state is PlanValidationState.NOT_VALIDATED
-    assert ValidationErrorCode.COVERAGE_GAP.value in planner.calls[2][0]
-    assert '"previous_candidate"' in planner.calls[2][0]
-    assert "invalid-claim" in planner.calls[2][0]
+    assert ValidationErrorCode.COVERAGE_GAP.value in planner.calls[1][0]
+    assert '"previous_candidate"' in planner.calls[1][0]
+    assert "invalid-claim" in planner.calls[1][0]
+    assert '"feasible_assignment_matrix"' not in planner.calls[1][0]
+    assert "Compose the plan only from FeasibleAssignmentMatrix" not in planner.calls[1][0]
     assert result.architecture == "multi"
     assert result.orchestrator_invocation_count == 1
-    assert result.planner_invocation_count == 3
+    assert result.planner_invocation_count == 2
 
 
 def test_orchestrator_cannot_override_authoritative_initial_facts() -> None:
@@ -338,7 +345,7 @@ def test_multi_agent_flow_emits_safe_role_and_validation_events(
         if event["event_type"] != "planner_input_prepared"
     )
     prepared = [event for event in events if event["event_type"] == "planner_input_prepared"]
-    assert [event["stage"] for event in prepared] == ["context_verification", "proposal"]
+    assert [event["stage"] for event in prepared] == ["proposal"]
     assert len({event["planner_input_digest"] for event in prepared}) == 1
     assert all("prompt" not in event and "authoritative_context" not in event for event in prepared)
     assert not any("prompt" in event or "reasoning" in event for event in events)

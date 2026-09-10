@@ -56,5 +56,45 @@ describe('RecoveryApiService', () => {
     expect(approval.request.method).toBe('POST');
     expect(approval.request.body).toEqual({ decision: 'APPROVE', expected_version: 3 });
     approval.flush(approvalCase);
+
+    service
+      .decideApproval('case-ui-demo', 'approval-1', {
+        decision: 'REJECT',
+        reason: 'Parent declined recovery cost',
+        expected_version: 3,
+      })
+      .subscribe();
+    const rejection = http.expectOne(
+      `${environment.apiBaseUrl}/recoveries/case-ui-demo/approvals/approval-1`,
+    );
+    expect(rejection.request.method).toBe('POST');
+    expect(rejection.request.body).toEqual({
+      decision: 'REJECT',
+      reason: 'Parent declined recovery cost',
+      expected_version: 3,
+    });
+    rejection.flush(approvalCase);
+  });
+
+  it('correlates mutations to a resumable progress channel and reads its snapshot', () => {
+    service
+      .startRecovery(
+        {
+          disruption_type: 'CHILDCARE_UNAVAILABLE',
+          occurred_at: '2026-08-27T07:02:00-07:00',
+          caregiver_id: 'nanny',
+          message: 'Unable to work',
+        },
+        'progress-ui-0001',
+      )
+      .subscribe();
+    const start = http.expectOne(`${environment.apiBaseUrl}/recoveries`);
+    expect(start.request.headers.get('X-DayMend-Progress-ID')).toBe('progress-ui-0001');
+    start.flush(planACase);
+
+    service.getProgress('progress-ui-0001').subscribe((events) => expect(events).toEqual([]));
+    const snapshot = http.expectOne(`${environment.apiBaseUrl}/progress/progress-ui-0001`);
+    expect(snapshot.request.method).toBe('GET');
+    snapshot.flush([]);
   });
 });

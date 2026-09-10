@@ -26,7 +26,12 @@ def create_app(service: RecoveryApplicationService | None = None) -> FastAPI:
         allow_origins=allowed_origins(),
         allow_credentials=True,
         allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["Content-Type", "Accept"],
+        allow_headers=[
+            "Content-Type",
+            "Accept",
+            "Last-Event-ID",
+            "X-DayMend-Progress-ID",
+        ],
     )
 
     @application.exception_handler(RecoveryCaseNotFound)

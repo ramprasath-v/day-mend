@@ -314,9 +314,9 @@ def test_recommendation_reaches_planner_and_existing_validator_accepts_plan() ->
     assert research is not None
     assert need.requested_windows == [window(10, 12)]
     assert brief.recommended_backup_care_candidate_id == "harbor_nanny_coop"
-    assert "Planner input digest:" in planner.calls[0][0]
-    assert '"planning_brief"' in planner.calls[1][0]
-    assert brief.recommended_backup_care_candidate_id in planner.calls[1][0]
+    assert '"feasible_assignment_matrix"' in planner.calls[0][0]
+    assert '"planning_brief"' in planner.calls[0][0]
+    assert brief.recommended_backup_care_candidate_id in planner.calls[0][0]
     assert planning.success is True
     assert planning.total_attempts == 1
     assert planning.final_plan is not None

@@ -1,21 +1,22 @@
 <section class="card timeline" aria-labelledby="timeline-title">
   <header>
-    <p class="eyebrow">Recovery timeline</p>
-    <h2 id="timeline-title">What DayMend has done</h2>
+    <p class="eyebrow">Live workflow</p>
+    <h2 id="timeline-title">Recovery activity</h2>
   </header>
   <ol>
     @for (item of items(); track item.id; let last = $last) {
       <li [attr.data-state]="item.state">
         <div class="timeline__rail" aria-hidden="true">
-          <span></span>
+          <span>{{ item.icon }}</span>
           @if (!last) {
             <i></i>
           }
         </div>
-        <time>{{ item.time | date: 'h:mm a' }}</time>
         <div>
+          <span class="timeline__actor">{{ item.actor }}</span>
           <strong>{{ item.title }}</strong>
           <p>{{ item.detail }}</p>
+          <time>{{ item.time | date: 'h:mm a' }}</time>
         </div>
       </li>
     }

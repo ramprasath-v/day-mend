@@ -156,3 +156,41 @@ export interface ApprovalDecisionRequest {
   reason?: string;
   expected_version: number;
 }
+
+export type ProgressActorType = 'AGENT' | 'DETERMINISTIC_SERVICE' | 'HUMAN' | 'SYSTEM';
+export type ProgressStatus = 'WAITING' | 'ACTIVE' | 'COMPLETED' | 'WARNING' | 'FAILED';
+
+export interface RecoveryProgressEvent {
+  id: string;
+  progress_id: string;
+  recovery_case_id: string | null;
+  sequence: number;
+  timestamp: string;
+  event_type: string;
+  actor_type: ProgressActorType;
+  actor_name: string;
+  stage: string;
+  status: ProgressStatus;
+  summary: string;
+  details: {
+    action_id?: string;
+    action_type?: string;
+    affected_windows?: string[];
+    attempt_number?: number;
+    candidate_count?: number;
+    cost?: MoneyValue;
+    eligible_candidate_count?: number;
+    invalidated_count?: number;
+    issue_codes?: string[];
+    issue_count?: number;
+    operation?: string;
+    orchestrator_invocation_count?: number;
+    plan_id?: string;
+    planner_invocation_count?: number;
+    preserved_count?: number;
+    recommended_candidate_id?: string;
+    research_agent_invocation_count?: number;
+    requires_approval?: boolean;
+    success?: boolean;
+  };
+}

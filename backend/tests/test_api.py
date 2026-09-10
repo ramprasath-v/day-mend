@@ -14,6 +14,7 @@ from app.application import RecoveryApplicationService
 from app.fixtures import DemoScenario, get_legacy_demo_scenario
 from app.main import create_app
 from app.models import RecoveryCase, RecoveryEvent, RecoveryStatus
+from app.progress import progress_buffer
 from app.repositories import InMemoryRecoveryCaseRepository
 from app.services import ApprovalService, PlanValidator, WorkflowInvariantError
 from tests.milestone2_helpers import at, validated_plan_a
@@ -145,6 +146,126 @@ def test_create_returns_201_id_and_persists(
     assert body["automatic_spend_limit"] == "30"
     assert body["currency"] == "USD"
     assert repository.get("case-api-offline").case_id == body["recovery_case_id"]
+
+
+def test_progress_api_tracks_and_replays_the_same_recovery_lifecycle(client: TestClient) -> None:
+    progress_buffer.clear()
+    progress_id = "progress-api-offline-0001"
+    headers = {"X-DayMend-Progress-ID": progress_id}
+    created_response = client.post(
+        "/recoveries",
+        headers=headers,
+        json={
+            "disruption_type": "CHILDCARE_UNAVAILABLE",
+            "occurred_at": at(7, 2).isoformat(),
+            "caregiver_id": "nanny",
+            "message": "I'm sick and can't come today.",
+        },
+    )
+    assert created_response.status_code == 201
+    created = created_response.json()
+    case_id = created["recovery_case_id"]
+
+    pending_response = client.post(
+        f"/recoveries/{case_id}/events",
+        headers=headers,
+        json={
+            "event_type": "CAREGIVER_DECLINED",
+            "caregiver_id": "grandma",
+            "occurred_at": at(9, 5).isoformat(),
+            "relevant_window": {"start": at(10).isoformat(), "end": at(13).isoformat()},
+            "message": "Sorry, I can't help today.",
+            "expected_version": created["version"],
+        },
+    )
+    assert pending_response.status_code == 200
+    pending = pending_response.json()
+
+    resolved_response = client.post(
+        f"/recoveries/{case_id}/approvals/{pending['pending_approval']['approval_id']}",
+        headers=headers,
+        json={"decision": "APPROVE", "expected_version": pending["version"]},
+    )
+    assert resolved_response.status_code == 200
+    assert resolved_response.json()["status"] == "RESOLVED"
+
+    by_progress = client.get(f"/progress/{progress_id}").json()
+    by_case = client.get(f"/recoveries/{case_id}/progress").json()
+    event_types = [event["event_type"] for event in by_progress]
+    assert by_case == by_progress
+    assert [event["sequence"] for event in by_progress] == list(range(1, len(by_progress) + 1))
+    assert {
+        "RECOVERY_STARTED",
+        "ORCHESTRATOR_STARTED",
+        "PLAN_A_ACCEPTED",
+        "WORLD_STATE_CHANGED",
+        "SEGMENTS_INVALIDATED",
+        "SEGMENTS_PRESERVED",
+        "PLAN_B_ACCEPTED",
+        "APPROVAL_REQUIRED",
+        "APPROVAL_APPROVED",
+        "EXECUTION_STARTED",
+        "ACTION_SUCCEEDED",
+        "COMPLETION_VERIFIED",
+        "RECOVERY_RESOLVED",
+    } <= set(event_types)
+
+    cursor = by_progress[-2]["sequence"]
+    replay = client.get(
+        f"/progress/{progress_id}/stream?once=true",
+        headers={"Last-Event-ID": str(cursor)},
+    )
+    assert replay.status_code == 200
+    assert f"id: {by_progress[-1]['sequence']}" in replay.text
+    assert f"id: {cursor}\n" not in replay.text
+
+
+def test_rejected_approval_emits_no_execution_or_resolved_progress(client: TestClient) -> None:
+    progress_buffer.clear()
+    progress_id = "progress-api-reject-0001"
+    headers = {"X-DayMend-Progress-ID": progress_id}
+    created = client.post(
+        "/recoveries",
+        headers=headers,
+        json={
+            "disruption_type": "CHILDCARE_UNAVAILABLE",
+            "occurred_at": at(7, 2).isoformat(),
+            "caregiver_id": "nanny",
+            "message": "I'm sick and can't come today.",
+        },
+    ).json()
+    pending = client.post(
+        f"/recoveries/{created['recovery_case_id']}/events",
+        headers=headers,
+        json={
+            "event_type": "CAREGIVER_DECLINED",
+            "caregiver_id": "grandma",
+            "occurred_at": at(9, 5).isoformat(),
+            "relevant_window": {"start": at(10).isoformat(), "end": at(13).isoformat()},
+            "message": "Sorry, I can't help today.",
+            "expected_version": created["version"],
+        },
+    ).json()
+    rejected = client.post(
+        (
+            f"/recoveries/{created['recovery_case_id']}/approvals/"
+            f"{pending['pending_approval']['approval_id']}"
+        ),
+        headers=headers,
+        json={
+            "decision": "REJECT",
+            "reason": "Parent declined recovery cost",
+            "expected_version": pending["version"],
+        },
+    )
+
+    assert rejected.status_code == 200
+    events = client.get(f"/progress/{progress_id}").json()
+    event_types = [event["event_type"] for event in events]
+    assert "APPROVAL_REJECTED" in event_types
+    assert "EXECUTION_STARTED" not in event_types
+    assert "COMPLETION_VERIFIED" not in event_types
+    assert "RECOVERY_RESOLVED" not in event_types
 
 
 def test_create_rejects_malformed_request(client: TestClient) -> None:
@@ -305,6 +426,13 @@ def test_reject_records_decision_without_execution(client: TestClient) -> None:
     assert body["status"] == "REPLANNING"
     assert body["approval_history"][-1]["status"] == "REJECTED"
     assert body["execution_actions"] == []
+    assert body["timestamps"]["completion_verified_at"] is None
+    assert not any(event["event_type"] == "CASE_RESOLVED" for event in body["events"])
+
+    reloaded = client.get(f"/recoveries/{created['recovery_case_id']}")
+    assert reloaded.status_code == 200
+    assert reloaded.json()["status"] == "REPLANNING"
+    assert reloaded.json()["execution_actions"] == []
 
 
 def test_response_excludes_internal_context_and_sensitive_fields(client: TestClient) -> None:

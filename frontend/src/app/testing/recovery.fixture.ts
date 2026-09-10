@@ -182,6 +182,38 @@ export const approvalCase: RecoveryCase = {
   version: 3,
 };
 
+export const rejectedCase: RecoveryCase = {
+  ...approvalCase,
+  status: 'REPLANNING',
+  pending_approval: null,
+  approval_history: [
+    {
+      ...approvalCase.pending_approval!,
+      status: 'REJECTED',
+      decided_at: '2026-08-27T09:07:00-07:00',
+    },
+  ],
+  execution_actions: [],
+  events: [
+    ...approvalCase.events,
+    {
+      event_id: 'rejected',
+      event_type: 'APPROVAL_REJECTED',
+      occurred_at: '2026-08-27T09:07:00-07:00',
+      caregiver_id: null,
+      relevant_window: null,
+      message: 'Parent declined recovery cost',
+      details: {},
+    },
+  ],
+  timestamps: {
+    ...approvalCase.timestamps,
+    updated_at: '2026-08-27T09:07:00-07:00',
+    completion_verified_at: null,
+  },
+  version: 4,
+};
+
 export const resolvedCase: RecoveryCase = {
   ...approvalCase,
   status: 'RESOLVED',

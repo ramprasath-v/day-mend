@@ -1,5 +1,6 @@
-<aside class="demo" aria-label="Demo controls">
-  <div><span>Demo controls</span><small>Triggers real backend workflow events</small></div>
+@if (!recovery() || canDecline()) {
+<aside class="demo" aria-label="Demo scenario controls">
+  <div><span>Demo scenario</span><small>Choose the next real-world change</small></div>
   <div class="demo__actions">
     @if (!recovery()) {
       <button
@@ -8,7 +9,7 @@
         [disabled]="busy()"
         (click)="start.emit()"
       >
-        Simulate nanny cancellation
+        Nanny unavailable
       </button>
     } @else {
       @if (canDecline()) {
@@ -18,18 +19,10 @@
           [disabled]="busy()"
           (click)="decline.emit()"
         >
-          Simulate Grandma decline
+          Grandma can’t help
         </button>
       }
-      <button
-        type="button"
-        class="button button--icon"
-        aria-label="Refresh recovery"
-        [disabled]="busy()"
-        (click)="refresh.emit()"
-      >
-        ↻
-      </button>
     }
   </div>
 </aside>
+}

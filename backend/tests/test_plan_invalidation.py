@@ -51,9 +51,7 @@ def test_decline_invalidates_only_matching_assumption_and_records_event() -> Non
 def test_historical_event_preserves_occurred_at_and_keeps_case_time_monotonic() -> None:
     event = grandma_decline_event()
     created_at = at(9, 10)
-    case = recovery_case().model_copy(
-        update={"created_at": created_at, "updated_at": created_at}
-    )
+    case = recovery_case().model_copy(update={"created_at": created_at, "updated_at": created_at})
 
     outcome = PlanInvalidationService().apply_caregiver_decline(
         case, event, get_legacy_demo_scenario()

@@ -1,0 +1,155 @@
+:host { display: block; min-width: 0; }
+
+.live {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px 30px 30px 30px;
+  background: #293f38;
+  color: #f8f5ee;
+  box-shadow: 0 24px 65px rgba(37, 54, 47, 0.18);
+}
+
+.live::before {
+  content: '';
+  position: absolute;
+  width: 270px;
+  height: 270px;
+  right: -120px;
+  bottom: -165px;
+  border-radius: 50%;
+  background: rgba(218, 159, 118, 0.11);
+}
+
+.live__header {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+  align-items: end;
+  padding: 1.45rem 1.65rem 1.1rem;
+}
+
+.live__header .eyebrow { margin: 0 0 0.35rem; color: #d9ad8c; font-size: 0.82rem; font-weight: 720; }
+.live__header h2 { margin: 0; font-family: var(--display); font-size: clamp(1.75rem, 3vw, 2.65rem); font-weight: 620; letter-spacing: -0.045em; line-height: 1.05; }
+
+.live__signal {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.4rem 0.65rem;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 999px;
+  color: #c4cec9;
+  font-size: 0.75rem;
+  font-weight: 730;
+}
+
+.live__signal span { width: 8px; height: 8px; border-radius: 50%; background: #84938c; }
+.live__signal--active span { background: #a8d0b7; box-shadow: 0 0 0 5px rgba(168,208,183,.12); animation: pulse 1.5s ease-in-out infinite; }
+
+.orchestration {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0;
+  padding: 0.65rem 1.45rem 1rem;
+}
+
+.orchestration::before {
+  content: '';
+  position: absolute;
+  left: 1.8rem;
+  right: 1.8rem;
+  top: 1.46rem;
+  height: 1px;
+  background: rgba(255,255,255,.16);
+}
+
+.orchestration__node {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 0.25rem;
+  padding: 2rem 0.55rem 0;
+  color: #adbbb4;
+}
+
+.orchestration__node::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  left: 0.55rem;
+  top: 0.42rem;
+  width: 14px;
+  height: 14px;
+  border: 4px solid #293f38;
+  border-radius: 50%;
+  background: #77877f;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.25);
+}
+
+.orchestration__topline { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+.role { color: #c7d1cc; font-size: 0.67rem; font-weight: 680; }
+.state { color: #87968f; font-size: 0.62rem; font-weight: 720; }
+.orchestration__node strong { color: #f7f4ed; font-size: 0.84rem; line-height: 1.18; }
+.orchestration__node small { font-size: 0.71rem; line-height: 1.25; }
+.connector { display: none; }
+
+.orchestration__node--active::before { background: #df9a68; box-shadow: 0 0 0 5px rgba(223,154,104,.15); animation: pulse 1.5s ease-in-out infinite; }
+.orchestration__node--active .state { color: #f2ba91; }
+.orchestration__node--complete::before { background: #9ec5ab; }
+.orchestration__node--complete .state { color: #a9cdb5; }
+.orchestration__node--warning::before { background: #dfae5f; }
+.orchestration__node--warning .state { color: #ebc784; }
+.orchestration__node--failed::before { background: #dc7769; }
+
+.live__body {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(220px, 0.62fr) minmax(0, 1.38fr);
+  gap: 2rem;
+  padding: 1.15rem 1.65rem 1.5rem;
+  border-top: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.035);
+}
+
+.live__summary { align-self: start; display: grid; gap: 0.22rem; padding-left: 1rem; border-left: 2px solid #d9905f; }
+.live__label { margin: 0; color: #d9ad8c; font-size: 0.72rem; font-weight: 720; }
+.live__summary strong { font-size: 1.12rem; line-height: 1.25; }
+.live__summary > span { color: #b8c4be; font-size: 0.78rem; }
+.last-completed { margin: 0.65rem 0 0; color: #b8c4be; font-size: 0.77rem; line-height: 1.35; }
+.last-completed i { display: inline-grid; width: 18px; height: 18px; place-items: center; margin-right: 0.25rem; border-radius: 50%; background: rgba(158,197,171,.18); color: #b8d8c2; font-style: normal; }
+
+.event-feed { max-height: 230px; overflow-y: auto; display: grid; gap: 0; margin: 0; padding: 0 0.25rem 0 0; list-style: none; }
+.event-feed li { position: relative; display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 0.6rem; align-items: start; padding: 0 0 0.75rem; }
+.event-feed li:not(:last-child)::before { content: ''; position: absolute; left: 5px; top: 12px; bottom: -1px; width: 1px; background: rgba(255,255,255,.13); }
+.event-feed__marker { position: relative; z-index: 1; width: 11px; height: 11px; margin-top: 0.28rem; border: 3px solid #324941; border-radius: 50%; background: #84938c; box-shadow: 0 0 0 1px rgba(255,255,255,.18); }
+.event-feed li[data-status='ACTIVE'] .event-feed__marker { background: #df9a68; }
+.event-feed li[data-status='WARNING'] .event-feed__marker { background: #dfae5f; }
+.event-feed li[data-status='FAILED'] .event-feed__marker { background: #dc7769; }
+.event-feed__meta { display: flex; gap: 0.5rem; margin-bottom: 0.08rem; color: #9baca4; font-size: 0.62rem; font-weight: 670; }
+.event-feed strong { display: block; color: #f7f4ed; font-size: 0.86rem; line-height: 1.28; }
+.event-feed__details { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.28rem; }
+.event-feed__details span { padding: 0.16rem 0.38rem; border-radius: 999px; background: rgba(255,255,255,.08); color: #becac4; font-size: 0.67rem; font-weight: 650; overflow-wrap: anywhere; }
+.event-feed__empty div { display: grid; gap: 0.15rem; }
+.event-feed__empty span:last-child { color: #aebcb5; font-size: 0.78rem; }
+
+@keyframes pulse { 50% { opacity: 0.55; transform: scale(0.82); } }
+
+@media (max-width: 900px) {
+  .orchestration { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem 0; }
+  .orchestration::before { display: none; }
+  .orchestration__node { padding-top: 1.7rem; }
+  .live__body { grid-template-columns: 1fr; gap: 1rem; }
+}
+
+@media (max-width: 560px) {
+  .live { border-radius: 6px 24px 24px 24px; }
+  .live__header { align-items: flex-start; padding: 1.2rem; }
+  .live__signal { margin-top: 0.1rem; }
+  .orchestration { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0.5rem 0.9rem 1rem; }
+  .live__body { padding: 1rem 1.2rem 1.25rem; }
+  .event-feed { max-height: 320px; }
+}

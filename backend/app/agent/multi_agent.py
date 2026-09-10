@@ -257,6 +257,7 @@ def _log_planner_result(
             "plan_id": attempt.proposed_plan.plan_id,
             "valid": attempt.validation.valid,
             "issue_count": len(attempt.validation.issues),
+            "issue_codes": [issue.code for issue in attempt.validation.issues],
             "model_call_count": attempt.model_call_count,
         }
         log_event("planner_attempt_completed", **fields)

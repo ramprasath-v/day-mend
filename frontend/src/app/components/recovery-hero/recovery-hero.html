@@ -1,26 +1,45 @@
 <section class="hero" [attr.data-tone]="status().tone" aria-labelledby="recovery-title">
-  <div class="hero__signal" aria-hidden="true">
-    @if (status().tone === 'success') {
-      <span>✓</span>
-    } @else {
-      <span></span>
-    }
-  </div>
-  <div>
-    <p class="eyebrow">{{ status().eyebrow }}</p>
-    <h1 id="recovery-title">{{ status().title }}</h1>
-    <p class="hero__description">{{ status().description }}</p>
-    @if (loadingMessage()) {
-      <p class="hero__loading" aria-live="polite">
-        <span class="spinner" aria-hidden="true"></span>{{ loadingMessage() }}
-      </p>
-    }
+  <div class="hero__main">
+    <div class="hero__signal" aria-hidden="true">
+      @if (status().tone === 'success') {
+        <span>✓</span>
+      } @else {
+        <span></span>
+      }
+    </div>
+    <div>
+      <p class="eyebrow">{{ status().eyebrow }}</p>
+      <h1 id="recovery-title">{{ status().title }}</h1>
+      <p class="hero__description">{{ status().description }}</p>
+    </div>
   </div>
   @if (recovery()) {
-    <div class="hero__case">
-      <span>Recovery case</span>
-      <strong>{{ recovery()!.recovery_case_id.slice(0, 8) }}</strong>
-      <small>Updated {{ recovery()!.timestamps.updated_at | date: 'h:mm a' }}</small>
+    <div class="hero__summary" aria-label="Recovery summary">
+      <div>
+        <span>Case</span>
+        <strong>{{ recovery()!.recovery_case_id.slice(0, 8) }}</strong>
+      </div>
+      <div>
+        <span>Recovery cost</span>
+        <strong>
+          {{
+            money(recovery()!.current_deterministic_cost)
+              | currency: recovery()!.currency ?? 'USD' : 'symbol' : '1.0-0'
+          }}
+        </strong>
+      </div>
+      <div>
+        <span>Last updated</span>
+        <strong>{{ recovery()!.timestamps.updated_at | date: 'h:mm a' }}</strong>
+      </div>
+      <button
+        type="button"
+        class="button button--secondary"
+        [disabled]="busy()"
+        (click)="resetDemo.emit()"
+      >
+        Reset demo
+      </button>
     </div>
   }
 </section>

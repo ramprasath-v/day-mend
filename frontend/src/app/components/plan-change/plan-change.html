@@ -1,35 +1,56 @@
 @if (priorPlan() && affected().length) {
   <section class="card change" aria-labelledby="plan-change-title">
-    <div class="change__icon" aria-hidden="true">↻</div>
-    <div class="change__content">
-      <p class="eyebrow">Plan updated</p>
-      <h2 id="plan-change-title">Grandma is no longer available</h2>
-      <p>
-        DayMend preserved the parts of your day that still worked and replanned only the affected
-        coverage.
-      </p>
-      <div class="change__grid">
-        <div>
-          <span class="label label--affected">Affected</span>
-          @for (segment of affected(); track segment.segment_id) {
-            <div class="segment segment--affected">
-              <strong
-                >{{ segment.window.start | date: 'h:mm' }}–{{
-                  segment.window.end | date: 'h:mm a'
-                }}</strong
-              >
-              <span>{{ friendlyPerson(segment.assigned_person_id) }}</span>
-              <em>Unavailable</em>
-            </div>
-          }
-        </div>
-        <div>
-          <span class="label label--preserved">Preserved</span>
-          <div class="preserved-count">
-            <strong>{{ preserved().length }}</strong> Plan A segments still worked
-          </div>
-        </div>
+    <header>
+      <div class="change__icon" aria-hidden="true">↻</div>
+      <div>
+        <p class="eyebrow">What changed</p>
+        <h2 id="plan-change-title">Grandma is no longer available</h2>
       </div>
+      <p>
+        <strong>{{ preserved().length }} Plan A segments still worked.</strong> Only affected
+        coverage was replanned.
+      </p>
+    </header>
+    <div class="change__grid">
+      <article>
+        <span class="label label--preserved">Preserved · {{ preserved().length }}</span>
+        @for (segment of preserved(); track segment.segment_id) {
+          <div class="segment">
+            <strong>
+              {{ segment.window.start | date: 'h:mm' }}–{{
+                segment.window.end | date: 'h:mm a'
+              }}
+            </strong>
+            <span>{{ segmentLabel(segment) }}</span>
+          </div>
+        }
+      </article>
+      <article>
+        <span class="label label--affected">Invalidated · {{ affected().length }}</span>
+        @for (segment of affected(); track segment.segment_id) {
+          <div class="segment segment--affected">
+            <strong>
+              {{ segment.window.start | date: 'h:mm' }}–{{
+                segment.window.end | date: 'h:mm a'
+              }}
+            </strong>
+            <span>{{ segmentLabel(segment) }}</span>
+          </div>
+        }
+      </article>
+      <article>
+        <span class="label label--replacement">Replacement · {{ replacement().length }}</span>
+        @for (segment of replacement(); track segment.segment_id) {
+          <div class="segment segment--replacement">
+            <strong>
+              {{ segment.window.start | date: 'h:mm' }}–{{
+                segment.window.end | date: 'h:mm a'
+              }}
+            </strong>
+            <span>{{ segmentLabel(segment) }}</span>
+          </div>
+        }
+      </article>
     </div>
   </section>
 }

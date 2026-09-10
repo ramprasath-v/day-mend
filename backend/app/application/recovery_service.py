@@ -23,6 +23,7 @@ from app.agent.replanning import ReplanningResult, process_external_event
 from app.agent.research_multi_agent import run_research_multi_agent_initial_planning
 from app.fixtures import DemoScenario, get_demo_scenario
 from app.models import (
+    ApprovalStatus,
     BackupCareCandidate,
     CoverageWindow,
     RecoveryCase,
@@ -321,6 +322,7 @@ class RecoveryApplicationService:
                 plan_id=attempt.proposed_plan.plan_id,
                 valid=attempt.validation.valid,
                 issue_count=len(attempt.validation.issues),
+                issue_codes=[issue.code for issue in attempt.validation.issues],
             )
         if not planning.success or planning.final_plan is None:
             log_event(
@@ -339,6 +341,7 @@ class RecoveryApplicationService:
         log_event(
             "planning_validated",
             recovery_case_id=case_id,
+            phase="initial_planning",
             plan_id=accepted_plan.plan_id,
             attempt_number=planning.total_attempts,
             duration_ms=_duration_ms(started),
@@ -472,6 +475,7 @@ class RecoveryApplicationService:
                 plan_id=attempt.proposed_plan.plan_id,
                 valid=attempt.validation.valid,
                 issue_count=len(attempt.validation.issues),
+                issue_codes=[issue.code for issue in attempt.validation.issues],
             )
 
         if result.success:
@@ -504,6 +508,7 @@ class RecoveryApplicationService:
         log_event(
             "replan_validated",
             recovery_case_id=case_id,
+            phase="replanning",
             plan_id=result.final_plan.plan_id,
             attempt_number=result.total_attempts,
             duration_ms=_duration_ms(started),
@@ -566,7 +571,7 @@ class RecoveryApplicationService:
             status=result.approval.status,
         )
 
-        if command.decision is ApprovalDecision.REJECT:
+        if result.approval.status is not ApprovalStatus.APPROVED:
             return result.recovery_case
         if result.idempotent and result.recovery_case.status is RecoveryStatus.RESOLVED:
             return result.recovery_case

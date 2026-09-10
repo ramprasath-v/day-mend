@@ -26,10 +26,10 @@ describe('DemoControlsComponent', () => {
   it('offers the decline event only when active Plan A depends on Grandma', () => {
     fixture.componentRef.setInput('recovery', recoveryWith('grandma'));
     fixture.detectChanges();
-    expect(fixture.nativeElement.textContent).toContain('Simulate Grandma decline');
+    expect(fixture.nativeElement.textContent).toContain('Grandma can’t help');
 
     fixture.componentRef.setInput('recovery', recoveryWith('backup_sitter'));
     fixture.detectChanges();
-    expect(fixture.nativeElement.textContent).not.toContain('Simulate Grandma decline');
+    expect(fixture.nativeElement.textContent).not.toContain('Grandma can’t help');
   });
 });

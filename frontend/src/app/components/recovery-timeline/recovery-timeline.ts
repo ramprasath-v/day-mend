@@ -2,12 +2,15 @@ import { DatePipe } from '@angular/common';
 import { Component, computed, input } from '@angular/core';
 
 import { RecoveryCase } from '../../core/recovery.models';
+import { friendlyPerson } from '../../core/recovery-status';
 
 interface TimelineItem {
   id: string;
   time: string;
   title: string;
   detail: string;
+  actor: string;
+  icon: string;
   state: 'done' | 'changed' | 'pending';
 }
 
@@ -30,6 +33,8 @@ export class RecoveryTimelineComponent {
         time: disruption.occurred_at,
         title: 'Nanny reported sick',
         detail: 'Today’s normal childcare became unavailable.',
+        actor: 'World state',
+        icon: '!',
         state: 'changed',
       });
     }
@@ -37,7 +42,9 @@ export class RecoveryTimelineComponent {
       id: 'initial-plan',
       time: recovery.timestamps.created_at,
       title: recovery.previous_plans.length ? 'Recovery Plan A created' : 'Recovery plan created',
-      detail: 'Calendars, trusted caregivers, coverage, and cost were checked.',
+      detail: 'Coverage proposal passed the application’s deterministic checks.',
+      actor: 'Constraint Planner + validator',
+      icon: '✓',
       state: 'done',
     });
     const decline = events.find((event) => event.event_type === 'CAREGIVER_DECLINED');
@@ -47,13 +54,45 @@ export class RecoveryTimelineComponent {
         time: decline.occurred_at,
         title: 'Grandma declined',
         detail: 'The dependent Plan A coverage was marked unavailable.',
+        actor: 'World state update',
+        icon: '↻',
         state: 'changed',
       });
+      const previousCaregivers = new Set(
+        recovery.previous_plans
+          .at(-1)
+          ?.coverage_segments.filter((segment) => segment.source === 'CAREGIVER')
+          .map((segment) => segment.assigned_person_id) ?? [],
+      );
+      const newCaregivers = [
+        ...new Set(
+          recovery.active_plan?.coverage_segments
+            .filter(
+              (segment) =>
+                segment.source === 'CAREGIVER' &&
+                !previousCaregivers.has(segment.assigned_person_id),
+            )
+            .map((segment) => segment.assigned_person_id) ?? [],
+        ),
+      ];
+      if (newCaregivers.length) {
+        items.push({
+          id: 'backup-care-research',
+          time: recovery.timestamps.updated_at,
+          title: 'New backup option sourced',
+          detail: newCaregivers.map(friendlyPerson).join(', '),
+          actor: 'Backup Care Research',
+          icon: '+',
+          state: 'done',
+        });
+      }
       items.push({
         id: 'replan',
         time: recovery.timestamps.updated_at,
-        title: 'DayMend rebuilt the affected coverage',
-        detail: `${recovery.plan_history.length} earlier plan retained for a complete audit trail.`,
+        title: 'Affected coverage replanned',
+        detail: `${recovery.plan_history.length} earlier plan retained in the audit trail.`,
+        actor: 'Recovery Orchestrator',
+        icon: '✓',
         state: 'done',
       });
     }
@@ -64,6 +103,8 @@ export class RecoveryTimelineComponent {
         time: requested.occurred_at,
         title: 'Approval required',
         detail: 'The valid plan crossed the family’s automatic-spend limit.',
+        actor: 'Deterministic policy',
+        icon: '$',
         state: recovery.pending_approval ? 'pending' : 'done',
       });
     }
@@ -78,6 +119,8 @@ export class RecoveryTimelineComponent {
         detail: approved
           ? 'DayMend resumed the same recovery case.'
           : 'No recovery actions were executed.',
+        actor: 'Parent decision',
+        icon: approved ? '✓' : '×',
         state: approved ? 'done' : 'changed',
       });
     }
@@ -89,7 +132,9 @@ export class RecoveryTimelineComponent {
         id: 'actions',
         time: recovery.timestamps.updated_at,
         title: `${succeeded.length} recovery actions completed`,
-        detail: 'Calendar changes and backup coverage were confirmed.',
+        detail: 'Backup coverage and calendar updates were confirmed.',
+        actor: 'Simulated execution',
+        icon: '✓',
         state: succeeded.length === recovery.execution_actions.length ? 'done' : 'pending',
       });
     }
@@ -99,6 +144,8 @@ export class RecoveryTimelineComponent {
         time: recovery.timestamps.completion_verified_at ?? recovery.timestamps.updated_at,
         title: 'Day recovered',
         detail: 'Full childcare coverage passed deterministic final verification.',
+        actor: 'Deterministic verifier',
+        icon: '✓',
         state: 'done',
       });
     }
