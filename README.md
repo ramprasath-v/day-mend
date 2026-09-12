@@ -2,6 +2,17 @@
 
 > “When childcare falls through, your whole day shouldn’t.”
 
+**Watch demo — video link coming soon** · **[Try live demo](https://d28bm0qb8qheeh.cloudfront.net/)**
+
+When a backup caregiver declines, DayMend repairs only the affected coverage, preserves what still
+works, and asks the parent only when a real decision is needed.
+
+> **What is real / what is simulated:** Strands agents, AgentCore, Claude Sonnet 4.5, validation,
+> replanning, approval policy, persistence, and live orchestration are real. Backup-provider
+> inventory is synthetic; booking, calendar, messaging, and payment execution are simulated.
+> `RESOLVED` means deterministic completion within the demo scenario and simulated execution
+> results.
+
 DayMend is a childcare disruption recovery agent for working parents, built for the
 **Everyday Agents / Agents for Humans** category. When normal childcare suddenly becomes
 unavailable, DayMend rebuilds the whole day: care coverage, parent calendars, trusted helpers,
@@ -107,6 +118,13 @@ whole-day plan.
 The independent `PlanValidator` remains the source of truth. A bounded repair loop allows at most
 three plan proposals; the limit and validation rules are never relaxed.
 
+```text
+Candidate plan → deterministic validator
+  → structured validator feedback if invalid → Planner repair → revalidation
+```
+
+Backup Care Research runs conditionally when known care options cannot cover the disruption.
+
 ## Responsibility boundary
 
 | Agents may | Deterministic code must |
@@ -123,16 +141,31 @@ three plan proposals; the limit and validation rules are never relaxed.
 
 ## Live Recovery orchestration
 
-FastAPI exposes an SSE progress stream correlated to each mutation by
-`X-DayMend-Progress-ID`. The frontend opens the channel before starting the request, merges the
-HTTP snapshot with streamed events, and deduplicates by event ID. Safe events cover orchestration,
-planning attempts, validator outcomes, repair, research, approval, execution, and completion.
+The live timeline shows structured backend progress through planning, validation, research,
+approval, execution, and completion. AgentCore-internal details may arrive when its response
+returns. For SSE, event deduplication, and transport retry details, see
+[Live progress and observability](docs/architecture.md#live-progress-and-observability).
 
-A transient AgentCore connection-establishment or connection-closed failure receives one internal
-transport retry with the same logical request ID and payload. Application errors, validation
-failures, authorization failures, malformed responses, and read timeouts are not retried.
+## One verified hosted lifecycle
 
-## Hosted proof
+These results describe one verified hosted lifecycle. The timings are individual observations,
+not averages, benchmarks, or reliability rates.
+
+| Evidence | Observed result |
+| --- | --- |
+| AgentCore runtime | v12 |
+| Plan A | Valid on first Planner attempt |
+| Plan A server latency | 32.031s |
+| Plan B | Valid on first Planner attempt |
+| Plan B server latency | 60.495s |
+| Deterministic cost | $87.75 |
+| Automatic-spend threshold | $30; human approval required |
+| Execution | 2 simulated actions succeeded |
+| Completion | Deterministically verified |
+| Final status | `RESOLVED` |
+| Persistence | Reload verified |
+
+Deployment details:
 
 - Frontend: <https://d28bm0qb8qheeh.cloudfront.net/>
 - Backend health: <https://5zvgskmgiu.us-east-1.awsapprunner.com/health>
@@ -141,11 +174,6 @@ failures, authorization failures, malformed responses, and read timeouts are not
 - Architecture: `multi_research`
 - Model: `us.anthropic.claude-sonnet-4-5-20250929-v1:0`
 - Persistence: DynamoDB table `daymend-demo-recovery-cases`
-
-The final hosted lifecycle produced valid Plan A and Plan B on their first Planner attempts. Plan A
-took about 32.0 seconds server-side; Plan B took about 60.5 seconds and included one Backup Care
-Research invocation. Approval, two simulated execution actions, completion verification,
-`RESOLVED`, SSE progress, and persistence after reload were all verified.
 
 The public demo is unauthenticated and uses synthetic family and provider data.
 
