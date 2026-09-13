@@ -139,6 +139,7 @@ class FeasibleCarePrimitive(ContractModel):
     location_id: str
     location_label: str
     capability: Literal["ALLOWED"] = "ALLOWED"
+    immutable: bool = False
 
 
 class FeasibleTransportPrimitive(ContractModel):
@@ -156,6 +157,7 @@ class FeasibleTransportPrimitive(ContractModel):
     destination_location_label: str
     required_duration_minutes: int
     capability: Literal["ALLOWED"] = "ALLOWED"
+    immutable: bool = False
 
 
 class HardUnavailableCareWindow(ContractModel):
@@ -295,8 +297,140 @@ def _prune_to_full_coverage_paths(
     )
 
 
+def _preserved_primitive(
+    segment: RecoveryPlanSegment,
+) -> FeasibleCarePrimitive | FeasibleTransportPrimitive:
+    """Represent application-preserved work as one exact immutable primitive."""
+
+    if segment.segment_type is PlanSegmentType.CARE:
+        return FeasibleCarePrimitive(
+            primitive_id=segment.segment_id,
+            assigned_person_id=segment.assigned_person_id,
+            source=segment.source,
+            window=segment.window,
+            location_id=segment.location_id,
+            location_label=segment.location_label,
+            immutable=True,
+        )
+    assert segment.destination_location_id is not None
+    assert segment.transporter_id is not None
+    return FeasibleTransportPrimitive(
+        primitive_id=segment.segment_id,
+        assigned_person_id=segment.assigned_person_id,
+        source=segment.source,
+        transporter_id=segment.transporter_id,
+        window=segment.window,
+        location_id=segment.location_id,
+        location_label=segment.location_label,
+        destination_location_id=segment.destination_location_id,
+        destination_location_label=(
+            segment.destination_location_label or segment.destination_location_id
+        ),
+        required_duration_minutes=int(
+            (segment.window.end - segment.window.start).total_seconds() // 60
+        ),
+        immutable=True,
+    )
+
+
+def _replanning_primitives(
+    care_primitives: list[FeasibleCarePrimitive],
+    transport_primitives: list[FeasibleTransportPrimitive],
+    affected_windows: list[CoverageWindow],
+    preserved_segments: list[RecoveryPlanSegment],
+) -> tuple[list[FeasibleCarePrimitive], list[FeasibleTransportPrimitive]]:
+    """Combine exact preserved work with feasible work clipped to repair scope."""
+
+    clipped_care: dict[tuple[Any, ...], FeasibleCarePrimitive] = {}
+    for primitive in care_primitives:
+        for affected in affected_windows:
+            clipped = _window_intersection(primitive.window, affected)
+            if clipped is None:
+                continue
+            item = primitive.model_copy(
+                update={
+                    "primitive_id": (
+                        f"care:{primitive.assigned_person_id}:{clipped.start.isoformat()}"
+                    ),
+                    "window": clipped,
+                }
+            )
+            clipped_care[
+                (
+                    item.assigned_person_id,
+                    item.source,
+                    item.window.start,
+                    item.window.end,
+                    item.location_id,
+                )
+            ] = item
+
+    scoped_transport = {
+        (
+            item.transporter_id,
+            item.source,
+            item.window.start,
+            item.window.end,
+            item.location_id,
+            item.destination_location_id,
+        ): item
+        for item in transport_primitives
+        if any(
+            affected.start <= item.window.start and item.window.end <= affected.end
+            for affected in affected_windows
+        )
+    }
+    for segment in preserved_segments:
+        item = _preserved_primitive(segment)
+        if isinstance(item, FeasibleCarePrimitive):
+            clipped_care[
+                (
+                    item.assigned_person_id,
+                    item.source,
+                    item.window.start,
+                    item.window.end,
+                    item.location_id,
+                )
+            ] = item
+        else:
+            scoped_transport[
+                (
+                    item.transporter_id,
+                    item.source,
+                    item.window.start,
+                    item.window.end,
+                    item.location_id,
+                    item.destination_location_id,
+                )
+            ] = item
+    return (
+        sorted(
+            clipped_care.values(),
+            key=lambda item: (
+                item.window.start,
+                item.window.end,
+                item.source.value,
+                item.assigned_person_id,
+            ),
+        ),
+        sorted(
+            scoped_transport.values(),
+            key=lambda item: (
+                item.window.start,
+                item.window.end,
+                item.transporter_id,
+                item.location_id,
+                item.destination_location_id,
+            ),
+        ),
+    )
+
+
 def _build_feasible_assignment_matrix(
     context: PlannerAuthoritativeContext,
+    *,
+    affected_windows: list[CoverageWindow] | None = None,
+    preserved_segments: list[RecoveryPlanSegment] | None = None,
 ) -> FeasibleAssignmentMatrix:
     """Normalize authoritative facts into eligible solution-neutral primitives."""
 
@@ -544,6 +678,13 @@ def _build_feasible_assignment_matrix(
             item.assigned_person_id,
         )
     )
+    if affected_windows is not None or preserved_segments is not None:
+        care_primitives, transport_primitives = _replanning_primitives(
+            care_primitives,
+            transport_primitives,
+            affected_windows or [],
+            preserved_segments or [],
+        )
     care_primitives, transport_primitives = _prune_to_full_coverage_paths(
         care_primitives,
         transport_primitives,
@@ -678,7 +819,12 @@ def build_planner_invocation_input(
         family_preferences=context["get_family_preferences"],
         family_policy=context["get_family_policy"],
     )
-    matrix = _build_feasible_assignment_matrix(authoritative_context)
+    replanning = brief.planning_mode is PlanningMode.WORLD_STATE_REPLAN
+    matrix = _build_feasible_assignment_matrix(
+        authoritative_context,
+        affected_windows=brief.affected_windows if replanning else None,
+        preserved_segments=brief.preserved_segments if replanning else None,
+    )
     feedback = _actionable_validator_feedback(
         validator_feedback or [],
         previous_candidate,
@@ -712,6 +858,10 @@ def canonical_planner_input(planner_input: PlannerInvocationInput) -> str:
     matrix = payload.get("feasible_assignment_matrix")
     if matrix is not None:
         matrix.pop("people", None)
+        for category in ("care_primitives", "transport_primitives"):
+            for primitive in matrix[category]:
+                if not primitive["immutable"]:
+                    primitive.pop("immutable")
     return json.dumps(
         payload,
         sort_keys=True,
@@ -752,7 +902,10 @@ def render_planner_input(planner_input: PlannerInvocationInput) -> str:
     if planner_input.preserved_segments:
         action += (
             " Every segment in preserved_segments is a hard constraint and must remain materially "
-            "unchanged. Change only affected_segments and their connected handoffs."
+            "unchanged. Every immutable matrix primitive must appear exactly once without "
+            "resizing, "
+            "relocation, reassignment, or replacement. Change only affected_segments and their "
+            "connected handoffs."
         )
     if planner_input.operation is PlannerOperation.PLAN_REPAIR:
         action += (

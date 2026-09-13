@@ -33,6 +33,7 @@ export class FamilyService {
   private readonly http = inject(HttpClient);
   private readonly url = environment.apiBaseUrl + '/family';
   get() { return this.http.get<FamilyProfile>(this.url); }
+  resetDemo() { return this.http.post<FamilyProfile>(this.url + '/reset', {}); }
   saveFamily(profile: FamilyProfile) {
     return this.http.put<FamilyProfile>(this.url, {
       expected_version: profile.version,

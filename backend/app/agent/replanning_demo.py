@@ -3,9 +3,7 @@
 import json
 import sys
 from collections.abc import Callable
-from datetime import datetime
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from app.agent.config import RecoveryAgentConfig
 from app.agent.recovery_agent import (
@@ -15,11 +13,9 @@ from app.agent.recovery_agent import (
     run_initial_planning_session,
 )
 from app.agent.replanning import ReplanningResult, process_external_event
-from app.fixtures import DemoScenario, get_demo_scenario
+from app.fixtures import DemoScenario, DemoTimeline, get_demo_scenario
 from app.models import CoverageWindow, RecoveryEvent, RecoveryEventType
 from app.services import create_active_recovery_case
-
-PACIFIC = ZoneInfo("America/Los_Angeles")
 
 
 def _json_default(value: Any) -> str:
@@ -35,6 +31,7 @@ def run_live_replanning(
     """Run and return the real same-agent Milestone 2 workflow without printing it."""
 
     scenario = get_demo_scenario()
+    timeline = DemoTimeline(scenario.required_coverage.start.date())
     recorder = ToolInvocationRecorder()
     agent = build_recovery_agent(config, recorder)
     initial = run_initial_planning_session(
@@ -64,14 +61,14 @@ def run_live_replanning(
         disruption=scenario.disruption,
         validated_plan=initial.final_plan,
         required_coverage=scenario.required_coverage,
-        now=datetime(2026, 8, 27, 7, 10, tzinfo=PACIFIC),
+        now=timeline.at(7, 10),
     )
     event = RecoveryEvent(
         event_id=f"{case_id}:grandma-declined",
         event_type=RecoveryEventType.CAREGIVER_DECLINED,
         caregiver_id="grandma",
         relevant_window=affected_window,
-        occurred_at=datetime(2026, 8, 27, 9, 5, tzinfo=PACIFIC),
+        occurred_at=timeline.at(9, 5),
         message="Sorry, I can't help today.",
     )
     if progress is not None:

@@ -1,29 +1,42 @@
 """Demo family editing and authoritative scenario snapshots; no planning or hidden replans."""
 
+from collections.abc import Callable
 from dataclasses import replace
+from datetime import date
 
 from app.fixtures import DemoScenario, get_demo_scenario
+from app.fixtures.demo_date import DEMO_TIME_ZONE, resolve_demo_care_date
 from app.models import CareLocationType
 from app.models.family import FamilyProfile, FamilyUpdate, PolicyUpdate, PreferencesUpdate
 from app.repositories.family_repository import FamilyRepository, FamilyVersionConflict
 
 
 class FamilyService:
-    def __init__(self, repository: FamilyRepository, scenario_factory=get_demo_scenario) -> None:
+    def __init__(
+        self,
+        repository: FamilyRepository,
+        scenario_factory: Callable[[date | None], DemoScenario] = get_demo_scenario,
+        demo_date_source: Callable[[], date] = resolve_demo_care_date,
+    ) -> None:
         self.repository = repository
         self._scenario_factory = scenario_factory
+        self._demo_date_source = demo_date_source
 
-    def get(self) -> FamilyProfile:
-        profile = self.repository.get()
-        if profile is not None:
-            return profile
-        scenario = self._scenario_factory()
-        seed = FamilyProfile(
+    @staticmethod
+    def _seed(scenario: DemoScenario) -> FamilyProfile:
+        return FamilyProfile(
             caregivers=list(scenario.caregivers),
             required_care_schedule=scenario.required_coverage,
             preferences=scenario.preferences,
             policy=scenario.policy,
         )
+
+    def get(self) -> FamilyProfile:
+        profile = self.repository.get()
+        if profile is not None:
+            return profile
+        scenario = self._scenario_factory(self._demo_date_source())
+        seed = self._seed(scenario)
         try:
             return self.repository.save(seed, None)
         except FamilyVersionConflict:
@@ -33,8 +46,18 @@ class FamilyService:
                 raise
             return profile
 
+    def reset_demo(self) -> FamilyProfile:
+        """Replace only the demo profile with a coherent current-date canonical seed."""
+
+        current = self.repository.get()
+        scenario = self._scenario_factory(self._demo_date_source())
+        return self.repository.save(
+            self._seed(scenario),
+            current.version if current is not None else None,
+        )
+
     def locations(self) -> list[dict]:
-        scenario = self._scenario_factory()
+        scenario = self.scenario(self.get())
         locations = {
             scenario.family_home_location_id: {
                 "location_id": scenario.family_home_location_id,
@@ -125,8 +148,9 @@ class FamilyService:
         )
 
     def scenario(self, profile: FamilyProfile) -> DemoScenario:
+        care_date = profile.required_care_schedule.start.astimezone(DEMO_TIME_ZONE).date()
         return replace(
-            self._scenario_factory(),
+            self._scenario_factory(care_date),
             caregivers=tuple(profile.caregivers),
             required_coverage=profile.required_care_schedule,
             preferences=profile.preferences,

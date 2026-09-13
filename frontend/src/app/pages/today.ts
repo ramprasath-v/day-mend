@@ -28,7 +28,10 @@ export class TodayPage {
   constructor() {
     // Presentation only: this request must never gate or fail the recovery mutation.
     inject(FamilyService).get().pipe(takeUntilDestroyed()).subscribe({
-      next: family => this.pendingNotificationMode.set(family.notification_mode),
+      next: family => {
+        this.pendingNotificationMode.set(family.notification_mode);
+        this.store.demoCareDate.set(family.required_care_schedule.start);
+      },
       error: () => this.pendingNotificationMode.set('decisions_only'),
     });
   }

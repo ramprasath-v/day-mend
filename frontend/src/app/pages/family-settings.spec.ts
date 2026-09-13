@@ -31,6 +31,10 @@ describe('Editable family and deterministic settings', () => {
     const fixture = open(FamilyPage);
     expect(fixture.nativeElement.textContent).toContain('Family helper');
     expect(fixture.nativeElement.textContent).toContain('Helper home');
+    expect(fixture.nativeElement.textContent).toContain('Required care');
+    expect(fixture.nativeElement.textContent).toContain('Aug 27');
+    expect(fixture.nativeElement.textContent).toContain('dated care window');
+    expect(fixture.nativeElement.textContent).not.toContain('Demo required care');
     const edit = [...fixture.nativeElement.querySelectorAll('button')].find((b: any) => b.textContent.includes('Edit Family helper')) as HTMLButtonElement;
     edit.click(); fixture.detectChanges();
     expect(fixture.nativeElement.querySelectorAll('input[type="datetime-local"]').length).toBe(2);

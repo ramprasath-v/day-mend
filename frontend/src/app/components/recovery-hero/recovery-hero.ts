@@ -12,9 +12,25 @@ import { INITIAL_STATUS, RECOVERY_STATUS_COPY } from '../../core/recovery-status
 })
 export class RecoveryHeroComponent {
   readonly recovery = input<RecoveryCase | null>(null);
+  readonly careDate = input<string | null>(null);
   readonly busy = input(false);
   readonly resetDemo = output<void>();
   readonly money = Number;
+  readonly displayedCareDate = computed(
+    () =>
+      this.recovery()?.active_plan?.coverage_segments?.[0]?.window.start ?? this.careDate(),
+  );
+  readonly dateLabel = computed(() => {
+    const value = this.displayedCareDate();
+    if (!value) return 'Care date';
+    const careDate = new Date(value);
+    const now = new Date();
+    return careDate.getFullYear() === now.getFullYear() &&
+      careDate.getMonth() === now.getMonth() &&
+      careDate.getDate() === now.getDate()
+      ? 'Today'
+      : 'Care date';
+  });
   readonly status = computed(() => {
     const recovery = this.recovery();
     const base = recovery ? RECOVERY_STATUS_COPY[recovery.status] : INITIAL_STATUS;

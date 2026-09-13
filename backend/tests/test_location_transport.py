@@ -10,9 +10,12 @@ from app.agent.backup_care_researcher import (
 )
 from app.agent.config import AgentArchitecture, RecoveryAgentConfig
 from app.agent.constraint_planner import (
+    FeasibleCarePrimitive,
     PlannerOperation,
+    _prune_to_full_coverage_paths,
     build_planner_invocation_input,
     canonical_planner_input,
+    render_planner_input,
 )
 from app.agent.multi_agent import run_multi_agent_replanning
 from app.agent.recovery_agent import ToolInvocationRecorder
@@ -89,6 +92,42 @@ def plan_b() -> tuple[RecoveryPlan, object]:
         ],
     )
     return plan, scenario
+
+
+def replanning_showcase_input():
+    outcome = declined_outcome()
+    candidate = next(
+        candidate
+        for candidate in outcome.updated_scenario.backup_care_candidates
+        if candidate.candidate_id == "harbor_nanny_coop"
+    )
+    scenario = add_researched_caregiver(outcome.updated_scenario, candidate)
+    brief = PlanningBrief(
+        recovery_case_id=outcome.recovery_case.case_id,
+        planning_mode=PlanningMode.WORLD_STATE_REPLAN,
+        planning_required=True,
+        objective="Repair affected care while preserving valid work.",
+        required_coverage_window=scenario.required_coverage,
+        affected_windows=list(outcome.uncovered_windows),
+        affected_segments=list(outcome.impacted_segments),
+        preserved_segments=list(outcome.preserved_segments),
+        excluded_caregiver_ids=["grandma"],
+        relevant_constraint_categories=list(ConstraintCategory),
+        known_options_insufficient=True,
+        unresolved_known_option_windows=list(outcome.uncovered_windows),
+        backup_research_needed=True,
+        researched_candidate_ids=[candidate.candidate_id],
+        recommended_backup_care_candidate_id=candidate.candidate_id,
+    )
+    return (
+        build_planner_invocation_input(
+            operation=PlannerOperation.REPLANNING,
+            brief=brief,
+            scenario=scenario,
+        ),
+        outcome,
+        scenario,
+    )
 
 
 def issue_codes(plan: RecoveryPlan, scenario=None) -> set[ValidationErrorCode]:
@@ -223,6 +262,113 @@ def test_canonical_plan_a_is_composed_entirely_from_exact_feasible_primitives() 
     assert '"care_primitives"' in rendered
     assert '"transport_primitives"' in rendered
     assert '"people"' not in rendered
+
+
+def test_replanning_matrix_is_exact_continuous_home_based_path() -> None:
+    planner_input, _, _ = replanning_showcase_input()
+    matrix = planner_input.feasible_assignment_matrix
+
+    assert matrix is not None
+    assert [
+        (
+            item.assigned_person_id,
+            item.window,
+            item.location_id,
+            item.immutable,
+        )
+        for item in matrix.care_primitives
+    ] == [
+        ("parent_a", minute_window(8, 0, 8, 45), "family_home", True),
+        ("harbor_nanny_coop", minute_window(8, 45, 12, 15), "family_home", False),
+        ("backup_sitter", minute_window(12, 15, 16), "family_home", True),
+    ]
+    assert matrix.transport_primitives == []
+
+
+def test_replanning_clips_overlapping_availability_at_preserved_boundary() -> None:
+    planner_input, _, _ = replanning_showcase_input()
+    matrix = planner_input.feasible_assignment_matrix
+
+    assert matrix is not None
+    parent = next(item for item in matrix.people if item.person_id == "parent_a")
+    assert parent.permitted_care_windows == [minute_window(8, 0, 9)]
+    parent_primitives = [
+        item for item in matrix.care_primitives if item.assigned_person_id == "parent_a"
+    ]
+    assert len(parent_primitives) == 1
+    assert parent_primitives[0].window == minute_window(8, 0, 8, 45)
+    assert parent_primitives[0].immutable
+
+
+def test_replanning_preserved_primitives_are_explicit_and_immutable() -> None:
+    planner_input, outcome, scenario = replanning_showcase_input()
+    matrix = planner_input.feasible_assignment_matrix
+
+    assert matrix is not None
+    immutable_ids = {item.primitive_id for item in matrix.care_primitives if item.immutable}
+    assert immutable_ids == {"parent-early", "sitter-late"}
+    rendered = render_planner_input(planner_input)
+    assert '"immutable":true' in rendered
+    assert "must appear exactly once without resizing" in rendered
+
+    candidate, _ = plan_b()
+    assert (
+        PlanValidator()
+        .validate_repair(
+            candidate,
+            scenario,
+            list(outcome.preserved_segments),
+        )
+        .valid
+    )
+
+
+def test_full_path_pruning_rejects_genuinely_disconnected_home_care() -> None:
+    disconnected = [
+        FeasibleCarePrimitive(
+            primitive_id="first",
+            assigned_person_id="person_one",
+            source=CoverageSource.PARENT,
+            window=minute_window(8, 0, 9),
+            location_id="family_home",
+            location_label="Family home",
+        ),
+        FeasibleCarePrimitive(
+            primitive_id="second",
+            assigned_person_id="person_two",
+            source=CoverageSource.CAREGIVER,
+            window=minute_window(10, 0, 16),
+            location_id="family_home",
+            location_label="Family home",
+        ),
+    ]
+
+    care, transport = _prune_to_full_coverage_paths(
+        disconnected,
+        [],
+        minute_window(8, 0, 16),
+        "family_home",
+    )
+
+    assert care == []
+    assert transport == []
+
+
+def test_initial_plan_a_matrix_contract_remains_unscoped_and_unchanged() -> None:
+    scenario = get_demo_scenario()
+    planner_input = build_planner_invocation_input(
+        operation=PlannerOperation.INITIAL_PLANNING,
+        brief=initial_showcase_brief(scenario),
+        scenario=scenario,
+    )
+    matrix = planner_input.feasible_assignment_matrix
+
+    assert matrix is not None
+    assert all(
+        not item.immutable for item in [*matrix.care_primitives, *matrix.transport_primitives]
+    )
+    assert '"immutable"' not in canonical_planner_input(planner_input)
+    assert PlanValidator().validate(showcase_plan_a(), scenario).valid
 
 
 def test_caregiver_unavailable_repair_feedback_names_exact_feasible_care() -> None:

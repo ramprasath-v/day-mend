@@ -1,4 +1,4 @@
-<app-recovery-hero [recovery]="store.currentCase()" [busy]="store.loading()" (resetDemo)="store.resetDemo()" />
+<app-recovery-hero [recovery]="store.currentCase()" [careDate]="store.demoCareDate()" [busy]="store.loading()" (resetDemo)="store.resetDemo()" />
 @if (store.currentCase() || store.loading() || store.error()) {
   <app-live-recovery [events]="store.progressEvents()" [recovery]="store.currentCase()" [busy]="store.loading()" [connected]="store.progressConnected()" [elapsedSeconds]="store.elapsedSeconds()" [action]="store.actionInProgress()" [error]="store.error()" [pendingNotificationMode]="pendingNotificationMode()" />
 }

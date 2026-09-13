@@ -3,13 +3,12 @@
 import json
 import os
 import sys
-from datetime import datetime
 from typing import Any
 from uuid import uuid4
-from zoneinfo import ZoneInfo
 
 from app.agent.config import RecoveryAgentConfig
 from app.agent.replanning_demo import run_live_replanning
+from app.fixtures import DemoTimeline
 from app.repositories import (
     DynamoDBRecoveryCaseRepository,
     InMemoryRecoveryCaseRepository,
@@ -21,8 +20,6 @@ from app.services import (
     RecoveryExecutionService,
     apply_caregiver_decline_to_scenario,
 )
-
-PACIFIC = ZoneInfo("America/Los_Angeles")
 
 
 def _json_default(value: Any) -> str:
@@ -47,6 +44,7 @@ def main() -> int:
             base_scenario,
             replan.triggering_event,
         )
+        timeline = DemoTimeline(base_scenario.required_coverage.start.date())
 
         if table_name:
             ensure_recovery_case_table(table_name=table_name, region_name=config.region_name)
@@ -65,7 +63,7 @@ def main() -> int:
             replan.recovery_case,
             replan.final_validation,
             updated_scenario.policy,
-            now=datetime(2026, 8, 27, 9, 15, tzinfo=PACIFIC),
+            now=timeline.at(9, 15),
         )
         if not gated.approval_required or gated.approval_request is None:
             raise RuntimeError("Live Plan B did not cross the deterministic autonomy boundary")
@@ -83,17 +81,17 @@ def main() -> int:
         decision = ApprovalService(restarted_repository).approve(
             case_id,
             gated.approval_request.approval_id,
-            now=datetime(2026, 8, 27, 9, 20, tzinfo=PACIFIC),
+            now=timeline.at(9, 20),
         )
         execution = RecoveryExecutionService(restarted_repository).execute(
             case_id,
             updated_scenario.policy,
-            now=datetime(2026, 8, 27, 9, 25, tzinfo=PACIFIC),
+            now=timeline.at(9, 25),
         )
         completion = CompletionVerifier(restarted_repository).verify_and_resolve(
             case_id,
             updated_scenario,
-            now=datetime(2026, 8, 27, 9, 30, tzinfo=PACIFIC),
+            now=timeline.at(9, 30),
         )
         final_repository = (
             DynamoDBRecoveryCaseRepository(

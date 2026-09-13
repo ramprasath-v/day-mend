@@ -484,7 +484,7 @@ describe('DayMend recovery experience', () => {
     expect(fixture.nativeElement.querySelector('app-plan-change')).not.toBeNull();
   });
 
-  it('resets the local demo without calling a backend reset endpoint', () => {
+  it('reseeds the demo family before clearing only the local recovery reference', () => {
     const fixture = create();
     startAndFlush(fixture);
 
@@ -493,6 +493,11 @@ describe('DayMend recovery experience', () => {
       .nativeElement.click();
     fixture.detectChanges();
 
+    expect(localStorage.getItem('daymend.recoveryCaseId')).toBe('case-ui-demo');
+    const request = http.expectOne(environment.apiBaseUrl + '/family/reset');
+    expect(request.request.method).toBe('POST');
+    request.flush(structuredClone(familyFixture));
+    fixture.detectChanges();
     expect(localStorage.getItem('daymend.recoveryCaseId')).toBeNull();
     expect(text(fixture)).toContain('Nanny unavailable');
   });

@@ -31,6 +31,11 @@ def get_family(request: Request):
     return _response(_service(request), _service(request).get())
 
 
+@router.post("/reset")
+def reset_demo_family(request: Request):
+    return _response(_service(request), _service(request).reset_demo())
+
+
 @router.put("")
 def update_family(request: Request, body: FamilyUpdate):
     return _update(request, "update", body)

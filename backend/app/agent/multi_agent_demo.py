@@ -2,11 +2,9 @@
 
 import json
 import sys
-from datetime import datetime
 from time import perf_counter
 from typing import Any
 from uuid import uuid4
-from zoneinfo import ZoneInfo
 
 from app.agent.config import AgentArchitecture, RecoveryAgentConfig
 from app.application import (
@@ -17,14 +15,9 @@ from app.application import (
     StartRecoveryCommand,
     StrandsRecoveryPlanningGateway,
 )
+from app.fixtures import DemoTimeline, get_demo_scenario
 from app.models import CoverageWindow, RecoveryEventType, RecoveryStatus
 from app.repositories import InMemoryRecoveryCaseRepository
-
-PACIFIC = ZoneInfo("America/Los_Angeles")
-
-
-def at(hour: int, minute: int = 0) -> datetime:
-    return datetime(2026, 8, 27, hour, minute, tzinfo=PACIFIC)
 
 
 def _json_default(value: Any) -> str:
@@ -44,13 +37,24 @@ def main() -> int:
         )
         return 1
 
-    times = iter([at(7, 10), at(9, 10), at(9, 15), at(9, 20), at(9, 25)])
+    scenario = get_demo_scenario()
+    timeline = DemoTimeline(scenario.required_coverage.start.date())
+    times = iter(
+        [
+            timeline.at(7, 10),
+            timeline.at(9, 10),
+            timeline.at(9, 15),
+            timeline.at(9, 20),
+            timeline.at(9, 25),
+        ]
+    )
     ids = iter([case_id, f"{case_id}:grandma-declined"])
     repository = InMemoryRecoveryCaseRepository()
     gateway = StrandsRecoveryPlanningGateway(config)
     service = RecoveryApplicationService(
         repository,
         gateway,
+        scenario_factory=lambda _care_date=None: scenario,
         clock=lambda: next(times),
         id_factory=lambda: next(ids),
     )
@@ -60,7 +64,7 @@ def main() -> int:
         plan_a_case = service.start_recovery(
             StartRecoveryCommand(
                 disruption_type="CHILDCARE_UNAVAILABLE",
-                occurred_at=at(7, 2),
+                occurred_at=timeline.at(7, 2),
                 caregiver_id="nanny",
                 message="I'm sick and can't come today.",
             )
@@ -112,7 +116,7 @@ def main() -> int:
             EventCommand(
                 event_type=RecoveryEventType.CAREGIVER_DECLINED,
                 caregiver_id="grandma",
-                occurred_at=at(8, 20),
+                occurred_at=timeline.at(8, 20),
                 relevant_window=affected_window,
                 message="Sorry, I can't help today.",
                 expected_version=plan_a_case.version,

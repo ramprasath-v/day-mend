@@ -16,7 +16,8 @@ describe('Consumer destinations', () => {
   let state: ReturnType<typeof makeState>;
   function makeState() {
     return { currentCase: signal<RecoveryCase | null>(resolvedCase), loading: signal(false), error: signal<string | null>(null),
-      progressEvents: signal([]), progressConnected: signal(false), elapsedSeconds: signal(0), actionInProgress: signal(null) };
+      progressEvents: signal([]), progressConnected: signal(false), elapsedSeconds: signal(0),
+      actionInProgress: signal(null), demoCareDate: signal(familyFixture.required_care_schedule.start) };
   }
   beforeEach(async () => {
     state = makeState();

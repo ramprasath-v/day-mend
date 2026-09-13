@@ -3,15 +3,23 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { finalize } from 'rxjs';
 
 import { RecoveryApiService } from './recovery-api.service';
+import { FamilyService } from './family.service';
 import { RecoveryProgressService } from './recovery-progress.service';
 import { ApprovalDecisionRequest, RecoveryCase, RecoveryProgressEvent } from './recovery.models';
 
-export type RecoveryAction = 'starting' | 'declining' | 'approving' | 'rejecting' | 'refreshing';
+export type RecoveryAction =
+  | 'starting'
+  | 'declining'
+  | 'approving'
+  | 'rejecting'
+  | 'refreshing'
+  | 'resetting';
 
 @Injectable({ providedIn: 'root' })
 export class RecoveryStore {
   private readonly storageKey = 'daymend.recoveryCaseId';
   private readonly api = inject(RecoveryApiService);
+  private readonly family = inject(FamilyService);
   private readonly progress = inject(RecoveryProgressService);
   private progressId: string | null = null;
   private disconnectProgress: (() => void) | null = null;
@@ -26,6 +34,7 @@ export class RecoveryStore {
   readonly progressEvents = signal<RecoveryProgressEvent[]>([]);
   readonly progressConnected = signal(false);
   readonly elapsedSeconds = signal(0);
+  readonly demoCareDate = signal<string | null>(null);
 
   constructor() {
     const storedCaseId = globalThis.localStorage?.getItem(this.storageKey);
@@ -42,6 +51,7 @@ export class RecoveryStore {
       approving: 'Confirming backup coverage and verifying the recovery…',
       rejecting: 'Recording your decision and looking for another option…',
       refreshing: 'Refreshing the recovery state…',
+      resetting: 'Resetting the demo family…',
     };
     const action = this.actionInProgress();
     return action ? messages[action] : '';
@@ -116,12 +126,23 @@ export class RecoveryStore {
 
   resetDemo(): void {
     if (this.loading()) return;
-    this.currentCase.set(null);
     this.error.set(null);
-    this.progressEvents.set([]);
-    this.stopProgress();
-    this.progressId = null;
-    globalThis.localStorage?.removeItem(this.storageKey);
+    this.actionInProgress.set('resetting');
+    this.family
+      .resetDemo()
+      .pipe(finalize(() => this.actionInProgress.set(null)))
+      .subscribe({
+        next: (profile) => {
+          this.demoCareDate.set(profile.required_care_schedule.start);
+          this.currentCase.set(null);
+          this.progressEvents.set([]);
+          this.stopProgress();
+          this.progressId = null;
+          globalThis.localStorage?.removeItem(this.storageKey);
+        },
+        error: () =>
+          this.error.set('DayMend could not reset the demo family. Your saved recovery is unchanged.'),
+      });
   }
 
   private run(

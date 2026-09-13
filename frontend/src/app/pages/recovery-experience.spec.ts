@@ -5,6 +5,7 @@ import { TodayPage } from './today';
 import { HistoryPage } from './history';
 import { LiveRecoveryComponent } from '../components/live-recovery/live-recovery';
 import { RepairZoneComponent } from '../components/repair-zone/repair-zone';
+import { RecoveryHeroComponent } from '../components/recovery-hero/recovery-hero';
 import { RecoveryStore } from '../core/recovery.store';
 import { FamilyService } from '../core/family.service';
 import { RecoveryCase, RecoveryProgressEvent } from '../core/recovery.models';
@@ -26,10 +27,12 @@ describe('Repairing day experience', () => {
     progressConnected: ReturnType<typeof signal<boolean>>;
     elapsedSeconds: ReturnType<typeof signal<number>>;
     actionInProgress: ReturnType<typeof signal<string | null>>;
+    demoCareDate: ReturnType<typeof signal<string | null>>;
   };
   beforeEach(async () => {
     state = { currentCase: signal(planACase), loading: signal(true), error: signal(null),
-      progressEvents: signal([]), progressConnected: signal(true), elapsedSeconds: signal(38), actionInProgress: signal('declining') };
+      progressEvents: signal([]), progressConnected: signal(true), elapsedSeconds: signal(38),
+      actionInProgress: signal('declining'), demoCareDate: signal(null) };
     await TestBed.configureTestingModule({
       imports: [TodayPage, HistoryPage, LiveRecoveryComponent, RepairZoneComponent],
       providers: [{ provide: RecoveryStore, useValue: state }, { provide: FamilyService, useValue: { get: () => of(familyFixture) } }],
@@ -107,6 +110,7 @@ describe('Repairing day experience', () => {
     expect(f.nativeElement.textContent).toContain('What changed');
     expect(f.nativeElement.querySelector('.pulse')).toBeNull();
     expect(f.nativeElement.textContent).toContain('Care date');
+    expect(f.nativeElement.textContent).toContain('Thu, Aug 27');
     expect(f.nativeElement.textContent).toContain('Recovery run completed');
     expect(f.nativeElement.querySelector('.resolved-changes').open).toBeFalse();
     expect(f.nativeElement.querySelector('app-coverage-plan')).not.toBeNull();
@@ -123,8 +127,25 @@ describe('Repairing day experience', () => {
     expect(technical.textContent).toContain('SUCCEEDED');
     expect(f.nativeElement.querySelector('.day-heading').textContent).not.toContain('SUCCEEDED');
     expect(f.nativeElement.textContent).toContain('Care date');
+    expect(f.nativeElement.textContent).toContain('Aug 27');
+    expect(f.nativeElement.querySelector('.date').textContent).not.toContain('Today');
     expect(technical.textContent).toContain('Recovery run started');
     technical.querySelector('summary')!.click(); expect(technical.open).toBeTrue();
+  });
+  it('labels a backend-provided current care date as Today', () => {
+    const now = new Date('2035-05-06T08:00:00-07:00');
+    jasmine.clock().install();
+    jasmine.clock().mockDate(now);
+    try {
+      const f = TestBed.createComponent(RecoveryHeroComponent);
+      f.componentRef.setInput('recovery', null);
+      f.componentRef.setInput('careDate', now.toISOString());
+      f.detectChanges();
+
+      expect(f.nativeElement.textContent).toContain('Today');
+    } finally {
+      jasmine.clock().uninstall();
+    }
   });
   it('does not turn a non-resolved history record into a recovered day', () => {
     state.currentCase.set(approvalCase);

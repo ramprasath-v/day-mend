@@ -1,38 +1,29 @@
 """Synthetic provider inventory and a realistic known-options coverage gap."""
 
-from datetime import datetime
+from datetime import date
 from decimal import Decimal
-from zoneinfo import ZoneInfo
 
+from app.fixtures.demo_date import DemoTimeline, resolve_demo_care_date
 from app.fixtures.nanny_cancellation import DemoScenario
 from app.models import (
     BackupCareCandidate,
     BackupCareProviderType,
     CalendarEvent,
     Caregiver,
-    CoverageWindow,
     FamilyPolicy,
     FamilyPreferences,
 )
 
-PACIFIC = ZoneInfo("America/Los_Angeles")
 
-
-def _at(hour: int, minute: int = 0) -> datetime:
-    return datetime(2026, 8, 27, hour, minute, tzinfo=PACIFIC)
-
-
-def _window(start_hour: int, end_hour: int) -> CoverageWindow:
-    return CoverageWindow(start=_at(start_hour), end=_at(end_hour))
-
-
-def get_backup_care_research_scenario() -> DemoScenario:
+def get_backup_care_research_scenario(care_date: date | None = None) -> DemoScenario:
     """Build a day where known care covers everything except 10:00–12:00."""
+
+    timeline = DemoTimeline(care_date or resolve_demo_care_date())
 
     return DemoScenario(
         disruption="The nanny reported sick at 07:02 and is unavailable today.",
         normal_caregiver_id="nanny",
-        required_coverage=_window(8, 16),
+        required_coverage=timeline.window(8, 16),
         unavailable_caregiver_ids=("nanny",),
         parent_ids=("parent_a", "parent_b"),
         parent_events=(
@@ -40,14 +31,14 @@ def get_backup_care_research_scenario() -> DemoScenario:
                 event_id="parent_a_customer_review",
                 owner_id="parent_a",
                 title="Customer review",
-                window=_window(10, 12),
+                window=timeline.window(10, 12),
                 critical=True,
             ),
             CalendarEvent(
                 event_id="parent_b_board_update",
                 owner_id="parent_b",
                 title="Board update",
-                window=_window(10, 12),
+                window=timeline.window(10, 12),
                 critical=True,
             ),
         ),
@@ -57,7 +48,7 @@ def get_backup_care_research_scenario() -> DemoScenario:
                 name="Grandma",
                 is_trusted=True,
                 relationship="family",
-                availability=[_window(8, 10)],
+                availability=[timeline.window(8, 10)],
                 hourly_rate=Decimal("0"),
                 known_to_family=True,
                 previously_used=True,
@@ -67,7 +58,7 @@ def get_backup_care_research_scenario() -> DemoScenario:
                 name="Known backup sitter",
                 is_trusted=True,
                 relationship="paid_backup",
-                availability=[_window(12, 16)],
+                availability=[timeline.window(12, 16)],
                 hourly_rate=Decimal("22"),
                 known_to_family=True,
                 previously_used=True,
@@ -95,17 +86,17 @@ def get_backup_care_research_scenario() -> DemoScenario:
             require_approval_for_unfamiliar_paid_caregiver=True,
         ),
         child_age_years=4,
-        backup_care_candidates=_candidate_inventory(),
+        backup_care_candidates=_candidate_inventory(timeline),
     )
 
 
-def _candidate_inventory() -> tuple[BackupCareCandidate, ...]:
+def _candidate_inventory(timeline: DemoTimeline) -> tuple[BackupCareCandidate, ...]:
     return (
         BackupCareCandidate(
             candidate_id="harbor_nanny_coop",
             display_name="Harbor Nanny Cooperative",
             provider_type=BackupCareProviderType.LOCAL_AGENCY,
-            availability=[_window(10, 16)],
+            availability=[timeline.window(10, 16)],
             hourly_rate=Decimal("27"),
             distance_miles=Decimal("2.2"),
             rating=Decimal("4.9"),
@@ -120,7 +111,7 @@ def _candidate_inventory() -> tuple[BackupCareCandidate, ...]:
             candidate_id="willow_family_care",
             display_name="Willow Family Care",
             provider_type=BackupCareProviderType.INDEPENDENT_CAREGIVER,
-            availability=[_window(9, 14)],
+            availability=[timeline.window(9, 14)],
             hourly_rate=Decimal("31"),
             distance_miles=Decimal("1.2"),
             rating=Decimal("4.8"),
@@ -135,7 +126,7 @@ def _candidate_inventory() -> tuple[BackupCareCandidate, ...]:
             candidate_id="bright_start_agency",
             display_name="Bright Start Backup Care",
             provider_type=BackupCareProviderType.LOCAL_AGENCY,
-            availability=[_window(10, 12)],
+            availability=[timeline.window(10, 12)],
             flat_rate=Decimal("58"),
             distance_miles=Decimal("3.8"),
             rating=Decimal("4.7"),
@@ -150,7 +141,7 @@ def _candidate_inventory() -> tuple[BackupCareCandidate, ...]:
             candidate_id="value_sitter_collective",
             display_name="Value Sitter Collective",
             provider_type=BackupCareProviderType.INDEPENDENT_CAREGIVER,
-            availability=[_window(12, 16)],
+            availability=[timeline.window(12, 16)],
             hourly_rate=Decimal("23"),
             distance_miles=Decimal("4.5"),
             rating=Decimal("4.7"),
@@ -165,7 +156,7 @@ def _candidate_inventory() -> tuple[BackupCareCandidate, ...]:
             candidate_id="neighborhood_helper",
             display_name="Neighborhood Helper",
             provider_type=BackupCareProviderType.INDEPENDENT_CAREGIVER,
-            availability=[_window(9, 13)],
+            availability=[timeline.window(9, 13)],
             hourly_rate=Decimal("21"),
             distance_miles=Decimal("0.8"),
             rating=Decimal("4.9"),
@@ -180,7 +171,7 @@ def _candidate_inventory() -> tuple[BackupCareCandidate, ...]:
             candidate_id="school_age_specialist",
             display_name="School Age Specialist",
             provider_type=BackupCareProviderType.LOCAL_AGENCY,
-            availability=[_window(8, 14)],
+            availability=[timeline.window(8, 14)],
             hourly_rate=Decimal("25"),
             distance_miles=Decimal("2.8"),
             rating=Decimal("4.85"),

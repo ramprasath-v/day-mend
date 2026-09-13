@@ -2,11 +2,9 @@
 
 import json
 import sys
-from datetime import datetime
 from time import perf_counter
 from typing import Any
 from uuid import uuid4
-from zoneinfo import ZoneInfo
 
 from app.agent.config import AgentArchitecture, RecoveryAgentConfig
 from app.agent.multi_agent_demo import _safe_validator_diagnostics
@@ -17,15 +15,9 @@ from app.application import (
     StartRecoveryCommand,
     StrandsRecoveryPlanningGateway,
 )
-from app.fixtures import get_backup_care_research_scenario
+from app.fixtures import DemoTimeline, get_backup_care_research_scenario
 from app.models import RecoveryStatus
 from app.repositories import InMemoryRecoveryCaseRepository
-
-PACIFIC = ZoneInfo("America/Los_Angeles")
-
-
-def at(hour: int, minute: int = 0) -> datetime:
-    return datetime(2026, 8, 27, hour, minute, tzinfo=PACIFIC)
 
 
 def main() -> int:
@@ -42,11 +34,21 @@ def main() -> int:
 
     repository = InMemoryRecoveryCaseRepository()
     gateway = StrandsRecoveryPlanningGateway(config)
-    times = iter([at(7, 10), at(7, 11), at(7, 12), at(7, 13), at(7, 14)])
+    scenario = get_backup_care_research_scenario()
+    timeline = DemoTimeline(scenario.required_coverage.start.date())
+    times = iter(
+        [
+            timeline.at(7, 10),
+            timeline.at(7, 11),
+            timeline.at(7, 12),
+            timeline.at(7, 13),
+            timeline.at(7, 14),
+        ]
+    )
     service = RecoveryApplicationService(
         repository,
         gateway,
-        scenario_factory=get_backup_care_research_scenario,
+        scenario_factory=lambda _care_date=None: scenario,
         clock=lambda: next(times),
         id_factory=lambda: case_id,
     )
@@ -55,7 +57,7 @@ def main() -> int:
         pending = service.start_recovery(
             StartRecoveryCommand(
                 disruption_type="CHILDCARE_UNAVAILABLE",
-                occurred_at=at(7, 2),
+                occurred_at=timeline.at(7, 2),
                 caregiver_id="nanny",
                 message="The normal caregiver is unavailable today.",
             )

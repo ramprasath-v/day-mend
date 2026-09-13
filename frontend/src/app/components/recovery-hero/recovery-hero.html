@@ -1,5 +1,5 @@
 <header class="hero">
-  <div><p class="eyebrow">Care date @if (recovery()?.active_plan?.coverage_segments?.[0]; as segment) { · {{ segment.window.start | date:'EEE, MMM d' }} } @else { · Demo day }</p>
+  <div><p class="eyebrow">{{ dateLabel() }} @if (displayedCareDate(); as value) { · {{ value | date:'EEE, MMM d' }} }</p>
     <h1>{{ status().title }}</h1><p>{{ status().description }}</p>
   </div>
   @if (recovery()) { <button class="button button--secondary" type="button" [disabled]="busy()" (click)="resetDemo.emit()">Reset demo</button> }

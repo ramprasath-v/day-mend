@@ -1,10 +1,10 @@
 """Deterministic synthetic data for the primary nanny-cancellation scenario."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date
 from decimal import Decimal
-from zoneinfo import ZoneInfo
 
+from app.fixtures.demo_date import DemoTimeline, resolve_demo_care_date
 from app.models import (
     BackupCareCandidate,
     BackupCareProviderType,
@@ -16,25 +16,6 @@ from app.models import (
     FamilyPreferences,
     ParentTransportCapability,
 )
-
-DEMO_TIME_ZONE = ZoneInfo("America/Los_Angeles")
-
-
-def _at(hour: int, minute: int = 0) -> datetime:
-    return datetime(2026, 8, 27, hour, minute, tzinfo=DEMO_TIME_ZONE)
-
-
-def _window(start_hour: int, end_hour: int, start_minute: int = 0) -> CoverageWindow:
-    return CoverageWindow(start=_at(start_hour, start_minute), end=_at(end_hour))
-
-
-def _range(
-    start_hour: int, start_minute: int, end_hour: int, end_minute: int = 0
-) -> CoverageWindow:
-    return CoverageWindow(
-        start=_at(start_hour, start_minute),
-        end=_at(end_hour, end_minute),
-    )
 
 
 @dataclass(frozen=True)
@@ -56,13 +37,15 @@ class DemoScenario:
     backup_care_candidates: tuple[BackupCareCandidate, ...] = ()
 
 
-def get_demo_scenario() -> DemoScenario:
+def get_demo_scenario(care_date: date | None = None) -> DemoScenario:
     """Build the location-aware showcase where Grandma is a factual dependency."""
+
+    timeline = DemoTimeline(care_date or resolve_demo_care_date())
 
     return DemoScenario(
         disruption="The nanny reported sick at 07:02 and is unavailable today.",
         normal_caregiver_id="nanny",
-        required_coverage=_window(8, 16),
+        required_coverage=timeline.window(8, 16),
         unavailable_caregiver_ids=("nanny",),
         parent_ids=("parent_a", "parent_b"),
         parent_events=(
@@ -70,28 +53,28 @@ def get_demo_scenario() -> DemoScenario:
                 event_id="parent_a_customer_workshop",
                 owner_id="parent_a",
                 title="Customer workshop",
-                window=_window(9, 12),
+                window=timeline.window(9, 12),
                 critical=True,
             ),
             CalendarEvent(
                 event_id="parent_a_afternoon_client_delivery",
                 owner_id="parent_a",
                 title="Afternoon client delivery",
-                window=_window(12, 16),
+                window=timeline.window(12, 16),
                 critical=True,
             ),
             CalendarEvent(
                 event_id="parent_b_executive_presentation",
                 owner_id="parent_b",
                 title="Executive presentation",
-                window=_range(8, 30, 12, 15),
+                window=timeline.window(8, 12, 30, 15),
                 critical=True,
             ),
             CalendarEvent(
                 event_id="parent_b_interview",
                 owner_id="parent_b",
                 title="Interview",
-                window=_window(14, 15),
+                window=timeline.window(14, 15),
                 critical=True,
             ),
         ),
@@ -101,7 +84,7 @@ def get_demo_scenario() -> DemoScenario:
                 name="Grandma",
                 is_trusted=True,
                 relationship="family",
-                availability=[_range(9, 0, 12, 15)],
+                availability=[timeline.window(9, 12, 0, 15)],
                 hourly_rate=Decimal("0"),
                 care_location_type=CareLocationType.CAREGIVER_HOME,
                 location_id="grandma_home",
@@ -115,7 +98,7 @@ def get_demo_scenario() -> DemoScenario:
                 name="Backup sitter",
                 is_trusted=True,
                 relationship="paid_backup",
-                availability=[_range(12, 15, 16)],
+                availability=[timeline.window(12, 16, 15)],
                 hourly_rate=Decimal("0"),
                 care_location_type=CareLocationType.FAMILY_HOME,
                 known_to_family=True,
@@ -143,7 +126,7 @@ def get_demo_scenario() -> DemoScenario:
             ParentTransportCapability(
                 parent_id="parent_a",
                 can_transport_child=True,
-                availability=[_range(8, 45, 9)],
+                availability=[timeline.window(8, 9, 45)],
             ),
             ParentTransportCapability(parent_id="parent_b", can_transport_child=False),
         ),
@@ -152,7 +135,7 @@ def get_demo_scenario() -> DemoScenario:
                 candidate_id="harbor_nanny_coop",
                 display_name="Harbor Nanny Cooperative",
                 provider_type=BackupCareProviderType.LOCAL_AGENCY,
-                availability=[_range(8, 45, 12, 15)],
+                availability=[timeline.window(8, 12, 45, 15)],
                 hourly_rate=Decimal("27"),
                 distance_miles=Decimal("2.2"),
                 rating=Decimal("4.9"),
@@ -168,7 +151,7 @@ def get_demo_scenario() -> DemoScenario:
                 candidate_id="willow_family_care",
                 display_name="Willow Family Care",
                 provider_type=BackupCareProviderType.INDEPENDENT_CAREGIVER,
-                availability=[_range(8, 45, 12, 15)],
+                availability=[timeline.window(8, 12, 45, 15)],
                 hourly_rate=Decimal("31"),
                 distance_miles=Decimal("1.2"),
                 rating=Decimal("4.8"),
@@ -187,13 +170,15 @@ def get_demo_scenario() -> DemoScenario:
     )
 
 
-def get_legacy_demo_scenario() -> DemoScenario:
+def get_legacy_demo_scenario(care_date: date | None = None) -> DemoScenario:
     """Preserve the original all-day-option fixture for historical validator tests."""
+
+    timeline = DemoTimeline(care_date or resolve_demo_care_date())
 
     return DemoScenario(
         disruption="The nanny reported sick at 07:02 and is unavailable today.",
         normal_caregiver_id="nanny",
-        required_coverage=_window(8, 16),
+        required_coverage=timeline.window(8, 16),
         unavailable_caregiver_ids=("nanny",),
         parent_ids=("parent_a", "parent_b"),
         parent_events=(
@@ -201,42 +186,42 @@ def get_legacy_demo_scenario() -> DemoScenario:
                 event_id="parent_a_standup",
                 owner_id="parent_a",
                 title="Internal standup",
-                window=_window(8, 9),
+                window=timeline.window(8, 9),
                 movable=True,
             ),
             CalendarEvent(
                 event_id="parent_a_customer_workshop",
                 owner_id="parent_a",
                 title="Customer workshop",
-                window=_window(9, 11),
+                window=timeline.window(9, 11),
                 critical=True,
             ),
             CalendarEvent(
                 event_id="parent_a_internal_sync",
                 owner_id="parent_a",
                 title="Internal sync",
-                window=_window(13, 14),
+                window=timeline.window(13, 14),
                 movable=True,
             ),
             CalendarEvent(
                 event_id="parent_b_executive_presentation",
                 owner_id="parent_b",
                 title="Executive presentation",
-                window=_range(8, 30, 10),
+                window=timeline.window(8, 10, 30),
                 critical=True,
             ),
             CalendarEvent(
                 event_id="parent_b_focus_block",
                 owner_id="parent_b",
                 title="Focus block",
-                window=_window(11, 12),
+                window=timeline.window(11, 12),
                 movable=True,
             ),
             CalendarEvent(
                 event_id="parent_b_interview",
                 owner_id="parent_b",
                 title="Interview",
-                window=_window(14, 15),
+                window=timeline.window(14, 15),
                 critical=True,
             ),
         ),
@@ -246,7 +231,7 @@ def get_legacy_demo_scenario() -> DemoScenario:
                 name="Grandma",
                 is_trusted=True,
                 relationship="family",
-                availability=[_window(10, 13)],
+                availability=[timeline.window(10, 13)],
                 hourly_rate=Decimal("0"),
             ),
             Caregiver(
@@ -254,7 +239,7 @@ def get_legacy_demo_scenario() -> DemoScenario:
                 name="Backup sitter",
                 is_trusted=True,
                 relationship="paid_backup",
-                availability=[_window(12, 16)],
+                availability=[timeline.window(12, 16)],
                 hourly_rate=Decimal("22"),
             ),
             Caregiver(
@@ -262,7 +247,7 @@ def get_legacy_demo_scenario() -> DemoScenario:
                 name="Employer backup care",
                 is_trusted=True,
                 relationship="employer_benefit",
-                availability=[_window(9, 16)],
+                availability=[timeline.window(9, 16)],
                 flat_rate=Decimal("48"),
             ),
         ),
