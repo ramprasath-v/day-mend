@@ -1,1 +1,10 @@
-:host { min-width: 0; display: block; } .approval { border-top: 2px solid var(--green); padding: 1rem 0; } h2 { margin: .5rem 0 1.3rem; } .amount { font-size: 2.6rem; line-height: 1.2; margin: 1.2rem 0; overflow-wrap: anywhere; } .provider { font-size: .9rem; overflow-wrap: anywhere; } .provider strong { font-size: 1.2rem; font-weight: 600; } .approval__actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: 1.5rem; } .button { white-space: normal; }
+:host { display: block; min-width: 0; }
+.approval { background: #293f36; color: #fffaf0; border-radius: 4px 12px 12px 4px; padding: 1.5rem; border-top: 5px solid #9bbaa5; box-shadow: 0 8px 20px #23382a12; }
+.eyebrow, .muted { color: #d7e1d4; } h2 { font-size: 1.8rem; margin: .3rem 0 1rem; }
+.provider { border-bottom: 1px solid #607166; padding-bottom: .8rem; overflow-wrap: anywhere; }
+.provider strong { font-size: 1.15rem; } time { font-variant-numeric: tabular-nums; }
+.amount { font-size: clamp(2rem,3vw,2.7rem); margin: 1rem 0; line-height: 1.15; overflow-wrap: anywhere; }
+.approval__actions { display: flex; flex-wrap: wrap; gap: .6rem; }
+.button--primary { background: #f6e9c5; color: #263c30; min-width: 0; white-space: normal; }
+.button--primary:hover:not(:disabled) { background: #fff3d4; }
+.button--quiet { color: #fffaf0; } button:focus-visible { outline-color: #ffcf7e; }

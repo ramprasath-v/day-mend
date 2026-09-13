@@ -1,4 +1,7 @@
 <app-recovery-hero [recovery]="store.currentCase()" [busy]="store.loading()" (resetDemo)="store.resetDemo()" />
+@if (store.currentCase() || store.loading() || store.error()) {
+  <app-live-recovery [events]="store.progressEvents()" [recovery]="store.currentCase()" [busy]="store.loading()" [connected]="store.progressConnected()" [elapsedSeconds]="store.elapsedSeconds()" [action]="store.actionInProgress()" [error]="store.error()" [pendingNotificationMode]="pendingNotificationMode()" />
+}
 @if (store.error(); as error) {
   <div class="error-banner" role="alert"><p>{{ error }}</p><button class="button button--secondary" (click)="store.refresh()" [disabled]="store.loading()">Try refresh</button></div>
 }
@@ -12,13 +15,20 @@
   <div class="day-layout" [class.has-decision]="!!recovery.pending_approval">
     <div class="day-schedule">
       @if (recovery.active_plan; as plan) {
-        @if (recovery.previous_plans.length) {
+        @if (store.actionInProgress() === 'declining') {
+          <app-repair-zone [plan]="plan" personId="grandma" [confirmed]="declineConfirmed()" />
+        } @else if (recovery.status === 'RESOLVED') {
+          <app-coverage-plan [plan]="plan" badge="Recovered day" [currency]="recovery.currency ?? 'USD'" />
+          @if (recovery.previous_plans.length) {
+            <details class="resolved-changes"><summary>What changed · See how your day was repaired</summary><app-plan-change [recovery]="recovery" /></details>
+          }
+        } @else if (recovery.previous_plans.length) {
           <app-plan-change [recovery]="recovery" />
         } @else {
           <app-coverage-plan [plan]="plan" badge="Recovery Plan A" [currency]="recovery.currency ?? 'USD'" />
         }
         @if (recovery.timestamps.completion_verified_at) {
-          <p class="verification">✓ Coverage verified · {{ recovery.timestamps.completion_verified_at | date:'medium' }}</p>
+          <p class="verification">✓ Coverage verified · Recovery run completed {{ recovery.timestamps.completion_verified_at | date:'medium' }}</p>
         }
       }
     </div>
@@ -30,7 +40,4 @@
   <section class="normal-day"><p class="eyebrow">Demo day · scheduled care</p><h2>One continuous care window</h2>
     <div class="normal-span"><time>8:00 AM–4:00 PM</time><strong>Nanny</strong><span>Scheduled childcare</span></div>
   </section>
-}
-@if (store.currentCase() || store.loading() || store.error()) {
-  <app-live-recovery [events]="store.progressEvents()" [recovery]="store.currentCase()" [busy]="store.loading()" [connected]="store.progressConnected()" [elapsedSeconds]="store.elapsedSeconds()" [action]="store.actionInProgress()" [error]="store.error()" [pendingNotificationMode]="pendingNotificationMode()" />
 }

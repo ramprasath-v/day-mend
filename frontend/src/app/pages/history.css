@@ -1,0 +1,14 @@
+:host { display: block; }
+.past-day { max-width: 1000px; border-top: 3px solid #b19a70; padding-top: 1.5rem; }
+.recovered { border-color: var(--green); }
+.day-heading { display: grid; grid-template-columns: 110px minmax(0,1fr); gap: 2rem; }
+.date span { display: block; font-size: .9rem; color: var(--muted); } .date strong { font-family: var(--display); font-size: 2rem; }
+h2 { margin: .3rem 0; } .outcome { color: var(--green); font-weight: 600; margin: 0; }
+.replacement-preview { padding-left: .8rem; border-left: 3px solid #3b7974; }
+.cost { font-weight: 600; font-variant-numeric: tabular-nums; }
+.story { margin-top: 1rem; } summary { color: var(--green); font-weight: 600; }
+.story > section { padding: 1rem 0; border-bottom: 1px solid var(--line); }
+.kept { border-left: 3px solid #a8bda8; padding-left: .8rem; }
+.technical { margin-top: 1rem; color: var(--muted); } .technical p, .technical li { overflow-wrap: anywhere; }
+time { font-variant-numeric: tabular-nums; }
+@media(max-width:600px) { .day-heading { grid-template-columns: minmax(0,1fr); gap: .8rem; } .date { display: flex; align-items: baseline; gap: .7rem; } }

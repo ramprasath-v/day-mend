@@ -9,7 +9,7 @@
   @if (recovery().automatic_spend_limit !== null && money(approval.amount) > money(recovery().automatic_spend_limit)) {
     <p>Above your {{ money(recovery().automatic_spend_limit) | currency: recovery().currency ?? 'USD':'symbol':'1.0-2' }} automatic-spend limit.</p>
   }
-  <p>{{ approval.reason }}</p>
+  <p><strong>Why DayMend is asking</strong><br>{{ approval.reason }}</p>
   <p class="muted">The proposed coverage has been checked. Your approval is needed before the recovery actions run.</p>
   <div class="approval__actions">
     <button class="button button--primary" type="button" [disabled]="busy()" (click)="approve.emit()">Approve {{ money(approval.amount) | currency: approval.currency ?? recovery().currency ?? 'USD':'symbol':'1.2-2' }}</button>

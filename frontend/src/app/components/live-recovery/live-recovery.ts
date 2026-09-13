@@ -19,6 +19,41 @@ export class LiveRecoveryComponent {
   readonly error = input<string | null>(null);
   readonly pendingNotificationMode = input<NotificationMode>('meaningful_changes');
   readonly journal = computed(() => [...this.events()].sort((a,b) => a.sequence - b.sequence));
+  readonly completedActions = computed(() => this.recovery()?.execution_actions.filter(a => a.status === 'SUCCEEDED').length ?? 0);
+  readonly currentEvents = computed(() => {
+    const events = this.journal();
+    if (this.action() !== 'declining') return events;
+    const accepted = events.reduce((last, e, index) => ['PLAN_A_ACCEPTED', 'PLAN_B_ACCEPTED'].includes(e.event_type) ? index : last, -1);
+    return events.slice(accepted + 1).filter(e => e.event_type !== 'APPROVAL_REQUIRED');
+  });
+  readonly phase = computed(() => {
+    if (!this.busy() || this.error() || ['refreshing', 'rejecting'].includes(this.action() ?? '')) return this.status();
+    if (!this.showActivitySummary()) return this.status();
+    const latest = this.currentEvents().at(-1);
+    if (this.action() === 'approving' && !latest?.event_type.startsWith('ACTION_') && !['EXECUTION_STARTED', 'COMPLETION_VERIFIED', 'RECOVERY_RESOLVED'].includes(latest?.event_type ?? '')) return 'Processing approval';
+    return latest ? this.eventLabel(latest) : this.action() === 'declining'
+      ? 'Sending the change — checking the affected care' : 'DayMend is working';
+  });
+  eventLabel(event: RecoveryProgressEvent): string {
+    if (event.status === 'FAILED') return event.summary;
+    const labels: Record<string, string> = {
+      RECOVERY_STARTED: 'Change received', WORLD_STATE_CHANGED: 'Caregiver response received',
+      ORCHESTRATOR_STARTED: 'Checking the day and people you know',
+      DISRUPTION_ASSESSED: 'Care context received', REPLANNING_STARTED: 'Rebuilding the affected care and handoffs',
+      SEGMENTS_INVALIDATED: 'Affected care needs a replacement', SEGMENTS_PRESERVED: 'Existing care preserved',
+      KNOWN_OPTIONS_EXHAUSTED: 'Known care cannot cover the gap', RESEARCH_STARTED: 'Looking for backup care',
+      RESEARCH_RESULTS_READY: 'Backup care options found', BACKUP_SELECTED: 'Replacement care recommended',
+      PLANNER_STARTED: 'Building the revised day', PLAN_PROPOSED: 'A proposed day is ready to check',
+      VALIDATION_STARTED: 'Checking timing, travel and cost', VALIDATION_FAILED: 'Adjusting the plan after checks',
+      PLAN_REPAIR_STARTED: 'Repairing the plan before you see it', VALIDATION_PASSED: 'Plan passed timing, travel and cost checks',
+      PLAN_A_ACCEPTED: 'Plan A is ready', PLAN_B_ACCEPTED: 'The repaired day is ready',
+      APPROVAL_REQUIRED: 'One decision needs you', APPROVAL_APPROVED: 'You approved the recovery',
+      APPROVAL_REJECTED: 'You declined — no actions taken', EXECUTION_STARTED: 'Putting the recovery into action',
+      ACTION_SUCCEEDED: 'Recovery action completed', COMPLETION_VERIFIED: 'Final childcare coverage verified',
+      RECOVERY_RESOLVED: 'Your day is recovered',
+    };
+    return labels[event.event_type] ?? event.summary;
+  }
   readonly showActivitySummary = computed(() =>
     (this.recovery()?.notification_mode ?? this.pendingNotificationMode()) === 'meaningful_changes');
   readonly showStatusSummary = computed(() => {

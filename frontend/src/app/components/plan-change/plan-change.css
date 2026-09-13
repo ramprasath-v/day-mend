@@ -1,4 +1,10 @@
 :host { display: block; min-width: 0; }
+.change { transition: border-color .25s ease; }
+.repair-interval { background: #edf2ec; border-top: 3px solid #3b7974; border-radius: 3px 8px 8px 3px; padding: 1.2rem !important; margin: .5rem 0; }
+.now .annotation { color: #23605c; font-weight: 600; }
+.before [data-classification="Unavailable"] { background: #f4e6df; padding: .6rem; margin-bottom: .6rem; }
+.kept { border-left: 3px solid #91ac94; padding-left: 1rem; }
+@media(prefers-reduced-motion: reduce) { .change { transition: none; } }
 header { margin-bottom: 1.5rem; } header h2 { margin: .3rem 0 .8rem; } header p { margin: .5rem 0; } .counts { font-size: .85rem; color: var(--green); } .counts span { color: var(--red); margin: 0 1rem; }
 .day-spine { border-left: 1px solid var(--line); margin-left: .3rem; padding-left: 1.4rem; }
 .schedule-segment { display: grid; grid-template-columns: minmax(125px, .42fr) minmax(0,1fr); gap: 1rem; padding: 1.2rem 0; border-bottom: 1px solid var(--line); }

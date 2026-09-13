@@ -1,0 +1,16 @@
+<section class="repair" aria-label="Affected care being repaired">
+  <header>
+    <p class="eyebrow">{{ confirmed() ? 'Change received' : 'Sending your change' }}</p>
+    <h2>{{ confirmed() ? 'This part of the day needs care.' : 'Checking the affected part of your day.' }}</h2>
+    @for (interval of windows(); track interval.start) { <p class="gap"><strong>{{ confirmed() ? 'Coverage needed' : 'Affected care' }}</strong> <time>{{ interval.start | date:'h:mm a' }}–{{ interval.end | date:'h:mm a' }}</time></p> }
+    <p>The rest of the recorded plan stays visible. Care and handoffs will be checked before a replacement is accepted.</p>
+  </header>
+  <div class="repair-spine">
+    @for (segment of segments(); track segment.segment_id) {
+      <article [class.broken]="affected().includes(segment)" [class.handoff]="needsReview(segment)" [attr.data-repair-status]="label(segment)">
+        <time>{{ segment.window.start | date:'h:mm a' }}–{{ segment.window.end | date:'h:mm a' }}</time>
+        <div><span class="annotation">{{ label(segment) }}</span><strong>{{ friendlyPerson(segment.transporter_id ?? segment.assigned_person_id) }}</strong><p>{{ segment.segment_type === 'TRANSPORT' ? 'Transport' : 'Care' }} · {{ location(segment) }}</p></div>
+      </article>
+    }
+  </div>
+</section>

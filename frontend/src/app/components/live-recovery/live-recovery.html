@@ -1,20 +1,26 @@
-<section class="journal">
+<section class="journal" [class.working]="busy()" [class.settled]="recovery()?.status === 'RESOLVED'" aria-label="Recovery updates">
   @if (showStatusSummary()) {
-  <p class="current" role="status">{{ status() }}
-    @if (busy()) { <span> · {{ elapsedSeconds() }}s</span> }
-  </p>
-  }
-  @if (busy() && showActivitySummary()) {
-    @if (events().at(-1); as event) { <p>{{ event.summary }}</p> }
-    @else { <p>Waiting for the first recovery update.</p> }
-    @if (!connected()) { <p class="muted">Progress connection reconnecting. The request may still be running.</p> }
+    <div class="recovery-strip">
+      <div class="strip-heading">
+        <span class="live-mark" [class.pulse]="busy() && !error()" aria-hidden="true">{{ recovery()?.status === 'RESOLVED' ? '✓' : '↳' }}</span>
+        <div><p class="current" role="status">{{ phase() }}</p>
+          @if (busy()) { <p class="elapsed">Working for {{ elapsedSeconds() }}s · {{ connected() ? 'Live updates connected' : 'Updates reconnecting; request may still be running' }}</p> }
+          @else if (recovery()?.status === 'RESOLVED') { <p class="elapsed">Recovery complete · {{ completedActions() }} actions completed · Coverage verified</p> }
+          @else if (recovery()?.pending_approval) { <p class="elapsed">Review the proposed care below. Nothing executes until you approve.</p> }
+        </div>
+      </div>
+      @if (busy() && showActivitySummary()) {
+        <p class="progress-note">{{ status() }}. Updates reflect recorded activity, not an estimate of time remaining.</p>
+      }
+    </div>
   }
   <details>
     <summary>How DayMend handled this</summary>
+    <p class="journal-date">Recovery activity timestamps · {{ recovery()?.timestamps?.created_at | date:'mediumDate' }}</p>
     <ol>
       @for (event of journal(); track event.id) {
-        <li><time>{{ event.timestamp | date:'mediumTime' }}</time><div><strong>{{ event.summary }}</strong>
-          <small>{{ event.actor_name.replaceAll('_', ' ') }}</small>
+        <li><time>{{ event.timestamp | date:'mediumTime' }}</time><div><strong>{{ eventLabel(event) }}</strong>
+          <small>{{ event.actor_name.replaceAll('_', ' ') }} · {{ event.event_type }} · {{ event.status }}</small>
           @if (event.details.attempt_number) { <span>Attempt {{ event.details.attempt_number }}</span> }
           @if (event.details.issue_count !== undefined) { <span>{{ event.details.issue_count }} validation issues</span> }
           @if (event.details.issue_codes?.length) { <span>{{ event.details.issue_codes?.join(', ') }}</span> }

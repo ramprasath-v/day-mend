@@ -115,7 +115,7 @@ describe('DayMend recovery experience', () => {
     fixture.detectChanges();
 
     expect(text(fixture)).toContain('DayMend is rebuilding today’s plan');
-    expect(text(fixture)).toContain('Waiting for the first recovery update.');
+    expect(text(fixture)).toContain('DayMend is working');
     expect(text(fixture)).toContain('How DayMend handled this');
     expect(fixture.nativeElement.querySelector('.orchestration')).toBeNull();
     expect(fixture.nativeElement.querySelector('app-live-recovery details').open).toBeFalse();
@@ -150,7 +150,7 @@ describe('DayMend recovery experience', () => {
     progress.setConnected(false);
     fixture.detectChanges();
 
-    expect(text(fixture)).toContain('Plan needs deterministic repair');
+    expect(text(fixture)).toContain('Adjusting the plan after checks');
     expect(text(fixture)).toContain('Attempt 1');
     expect(text(fixture)).toContain('1 validation issues');
     expect(text(fixture)).toContain('coverage_gap');
@@ -210,10 +210,10 @@ describe('DayMend recovery experience', () => {
     });
     fixture.detectChanges();
 
-    expect(text(fixture)).toContain('Repairing every listed validation issue');
-    expect(text(fixture)).toContain('Grounded replacement recommended');
+    expect(text(fixture)).toContain('Repairing the plan before you see it');
+    expect(text(fixture)).toContain('Replacement care recommended');
     expect(text(fixture)).toContain('backup care research');
-    expect(text(fixture)).toContain('Human approval required before execution');
+    expect(text(fixture)).toContain('One decision needs you');
     expect(fixture.debugElement.queryAll(By.css('.orchestration__node--active')).length).toBe(0);
 
     http.expectOne(`${environment.apiBaseUrl}/recoveries`).flush(planACase);
