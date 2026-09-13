@@ -18,6 +18,7 @@ from app.agent.recovery_orchestrator import (
     create_initial_planning_brief,
     create_replanning_brief,
 )
+from app.agent.research_planability import select_planable_research_candidate
 from app.agent.runtime_contracts import (
     AgentRuntimeRequest,
     AgentRuntimeResponse,
@@ -95,14 +96,17 @@ def execute_runtime_request(
                     recovery_need=need,
                 )
                 research_result = research_run.result
-                researched_candidate = research_run.recommended_candidate
-                scenario = add_researched_caregiver(scenario, researched_candidate)
+                selection = select_planable_research_candidate(
+                    research_run=research_run,
+                    scenario=scenario,
+                    brief=brief,
+                )
+                researched_candidate = selection.candidate
+                scenario = selection.scenario
                 brief = brief.model_copy(
                     update={
                         "researched_candidate_ids": research_result.eligible_candidate_ids,
-                        "recommended_backup_care_candidate_id": (
-                            research_result.recommended_candidate_id
-                        ),
+                        "recommended_backup_care_candidate_id": (researched_candidate.candidate_id),
                     }
                 )
                 research_calls = 1
@@ -142,8 +146,13 @@ def execute_runtime_request(
                         recovery_need=need,
                     )
                     research_result = research_run.result
-                    researched_candidate = research_run.recommended_candidate
-                    scenario = add_researched_caregiver(scenario, researched_candidate)
+                    selection = select_planable_research_candidate(
+                        research_run=research_run,
+                        scenario=scenario,
+                        brief=brief,
+                    )
+                    researched_candidate = selection.candidate
+                    scenario = selection.scenario
                     brief = brief.model_copy(
                         update={
                             "known_options_insufficient": True,
@@ -151,7 +160,7 @@ def execute_runtime_request(
                             "backup_research_needed": True,
                             "researched_candidate_ids": (research_result.eligible_candidate_ids),
                             "recommended_backup_care_candidate_id": (
-                                research_result.recommended_candidate_id
+                                researched_candidate.candidate_id
                             ),
                         }
                     )

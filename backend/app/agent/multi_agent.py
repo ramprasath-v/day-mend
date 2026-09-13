@@ -22,13 +22,13 @@ from app.agent.recovery_orchestrator import (
     create_replanning_brief,
 )
 from app.agent.replanning import ReplanningResult, build_replanning_result
+from app.agent.research_planability import select_planable_research_candidate
 from app.fixtures import DemoScenario
 from app.models import RecoveryCase, RecoveryEvent
 from app.observability import log_event
 from app.services import (
     PlanInvalidationService,
     PlanValidator,
-    add_researched_caregiver,
     assess_known_option_recovery_need,
 )
 
@@ -153,6 +153,7 @@ def run_multi_agent_replanning(
     brief = orchestration.brief
     planning_scenario = outcome.updated_scenario
     research_run = None
+    researched_candidate = None
     if config.architecture is AgentArchitecture.MULTI_RESEARCH:
         need = assess_known_option_recovery_need(outcome.updated_scenario)
         if need.research_needed:
@@ -166,18 +167,20 @@ def run_multi_agent_replanning(
                 scenario=outcome.updated_scenario,
                 recovery_need=need,
             )
-            planning_scenario = add_researched_caregiver(
-                outcome.updated_scenario, research_run.recommended_candidate
+            selection = select_planable_research_candidate(
+                research_run=research_run,
+                scenario=outcome.updated_scenario,
+                brief=brief,
             )
+            researched_candidate = selection.candidate
+            planning_scenario = selection.scenario
             brief = brief.model_copy(
                 update={
                     "known_options_insufficient": True,
                     "unresolved_known_option_windows": need.requested_windows,
                     "backup_research_needed": True,
                     "researched_candidate_ids": (research_run.result.eligible_candidate_ids),
-                    "recommended_backup_care_candidate_id": (
-                        research_run.result.recommended_candidate_id
-                    ),
+                    "recommended_backup_care_candidate_id": (researched_candidate.candidate_id),
                 }
             )
     log_event(
@@ -233,7 +236,7 @@ def run_multi_agent_replanning(
             + planning.model_call_count
         ),
         research_agent_invocation_count=1 if research_run else 0,
-        researched_candidate=(research_run.recommended_candidate if research_run else None),
+        researched_candidate=researched_candidate,
     )
     return replanning, brief
 

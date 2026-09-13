@@ -365,7 +365,11 @@ class AgentCoreRuntimeGateway:
             "backup_candidate_recommended",
             **fields,
             research_id=research.research_id,
-            recommended_candidate_id=research.recommended_candidate_id,
+            recommended_candidate_id=(
+                response.researched_candidate.candidate_id
+                if response.researched_candidate is not None
+                else research.recommended_candidate_id
+            ),
         )
 
     def _request(

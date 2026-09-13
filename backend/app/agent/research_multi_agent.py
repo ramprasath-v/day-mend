@@ -22,12 +22,12 @@ from app.agent.recovery_orchestrator import (
     build_recovery_orchestrator,
     create_initial_planning_brief,
 )
+from app.agent.research_planability import select_planable_research_candidate
 from app.fixtures import DemoScenario
 from app.observability import log_event
 from app.services import (
     PlanValidator,
     RecoveryNeed,
-    add_researched_caregiver,
     assess_known_option_recovery_need,
 )
 
@@ -87,6 +87,7 @@ def run_research_multi_agent_initial_planning(
 
     brief = orchestration.brief
     research_run: BackupCareResearchRun | None = None
+    researched_candidate = None
     planning_scenario = scenario
     if brief.backup_research_needed:
         windows = [
@@ -146,14 +147,17 @@ def run_research_multi_agent_initial_planning(
             tools_used=research_run.tools_used,
             success=True,
         )
-        planning_scenario = add_researched_caregiver(
-            scenario,
-            research_run.recommended_candidate,
+        selection = select_planable_research_candidate(
+            research_run=research_run,
+            scenario=scenario,
+            brief=brief,
         )
+        researched_candidate = selection.candidate
+        planning_scenario = selection.scenario
         brief = brief.model_copy(
             update={
                 "researched_candidate_ids": result.eligible_candidate_ids,
-                "recommended_backup_care_candidate_id": result.recommended_candidate_id,
+                "recommended_backup_care_candidate_id": researched_candidate.candidate_id,
                 "planner_directives": [
                     *brief.planner_directives[:7],
                     "Use the grounded recommended backup-care candidate where needed for the "
@@ -188,7 +192,6 @@ def run_research_multi_agent_initial_planning(
     research_tools = research_run.tools_used if research_run is not None else []
     research_model_calls = research_run.model_call_count if research_run is not None else 0
     research_duration_ms = research_run.duration_ms if research_run is not None else 0
-    researched_candidate = research_run.recommended_candidate if research_run is not None else None
     tools_used = [*orchestration.tools_used, *research_tools, *planning.tools_used]
     planning = planning.model_copy(
         update={
