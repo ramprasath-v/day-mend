@@ -4,6 +4,9 @@ from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+from pydantic import ValidationError as PydanticValidationError
+
 from app.agent.backup_care_researcher import (
     BackupCareResearchResult,
     RankedBackupCareCandidate,
@@ -12,10 +15,15 @@ from app.agent.config import AgentArchitecture, RecoveryAgentConfig
 from app.agent.constraint_planner import (
     FeasibleCarePrimitive,
     PlannerOperation,
+    PrimitiveSelection,
+    PrimitiveSelectionError,
     _prune_to_full_coverage_paths,
     build_planner_invocation_input,
     canonical_planner_input,
+    materialize_primitive_selection,
+    propose_constraint_plan,
     render_planner_input,
+    run_constraint_planning,
 )
 from app.agent.multi_agent import run_multi_agent_replanning
 from app.agent.recovery_agent import ToolInvocationRecorder
@@ -805,6 +813,155 @@ def test_in_home_plan_b_is_valid_and_keeps_existing_approval_rules() -> None:
     )
 
 
+def test_primitive_selection_materializes_exact_canonical_plan_b() -> None:
+    planner_input, outcome, scenario = replanning_showcase_input()
+    matrix = planner_input.feasible_assignment_matrix
+    assert matrix is not None
+    assert matrix.transport_primitives == []
+
+    selection = PrimitiveSelection(
+        selected_primitive_ids=[item.primitive_id for item in matrix.care_primitives]
+    )
+    plan = materialize_primitive_selection(selection, matrix)
+
+    assert [
+        (
+            segment.assigned_person_id,
+            segment.window,
+            segment.location_id,
+            segment.segment_type,
+        )
+        for segment in plan.coverage_segments
+    ] == [
+        (
+            primitive.assigned_person_id,
+            primitive.window,
+            primitive.location_id,
+            PlanSegmentType.CARE,
+        )
+        for primitive in matrix.care_primitives
+    ]
+    assert [segment.segment_id for segment in plan.coverage_segments] == [
+        primitive.primitive_id for primitive in matrix.care_primitives
+    ]
+    assert (
+        PlanValidator()
+        .validate_repair(
+            plan,
+            scenario,
+            list(outcome.preserved_segments),
+        )
+        .valid
+    )
+
+
+def test_primitive_selection_rejects_unknown_duplicate_and_missing_immutable_ids() -> None:
+    planner_input, _, _ = replanning_showcase_input()
+    matrix = planner_input.feasible_assignment_matrix
+    assert matrix is not None
+    immutable_ids = [item.primitive_id for item in matrix.care_primitives if item.immutable]
+    replacement_id = next(
+        item.primitive_id for item in matrix.care_primitives if not item.immutable
+    )
+
+    with pytest.raises(PrimitiveSelectionError, match="unknown primitive IDs"):
+        materialize_primitive_selection(
+            PrimitiveSelection(selected_primitive_ids=[*immutable_ids, "invented-transport"]),
+            matrix,
+        )
+    with pytest.raises(PrimitiveSelectionError, match="missing required immutable"):
+        materialize_primitive_selection(
+            PrimitiveSelection(selected_primitive_ids=[replacement_id]),
+            matrix,
+        )
+    with pytest.raises(PydanticValidationError, match="must be unique"):
+        PrimitiveSelection(selected_primitive_ids=[replacement_id, replacement_id])
+
+
+def test_primitive_selection_contract_cannot_supply_segment_fields() -> None:
+    planner_input, _, _ = replanning_showcase_input()
+    matrix = planner_input.feasible_assignment_matrix
+    assert matrix is not None
+    selected_ids = [item.primitive_id for item in matrix.care_primitives]
+
+    for invented_field in (
+        {"start": minute_window(8, 0, 9).start.isoformat()},
+        {"transport": {"transporter_id": "invented"}},
+        {"estimated_cost": "0"},
+    ):
+        with pytest.raises(PydanticValidationError, match="Extra inputs are not permitted"):
+            PrimitiveSelection.model_validate(
+                {"selected_primitive_ids": selected_ids, **invented_field}
+            )
+
+
+def test_replanning_requests_selection_and_runs_validator_after_materialization() -> None:
+    planner_input, _, scenario = replanning_showcase_input()
+    matrix = planner_input.feasible_assignment_matrix
+    assert matrix is not None
+    selection = PrimitiveSelection(
+        selected_primitive_ids=[item.primitive_id for item in matrix.care_primitives]
+    )
+
+    class Planner:
+        output_models = []
+
+        def __call__(self, _prompt, *, structured_output_model=None):
+            self.output_models.append(structured_output_model)
+            return SimpleNamespace(
+                structured_output=(
+                    selection if structured_output_model is PrimitiveSelection else None
+                )
+            )
+
+    class RecordingValidator(PlanValidator):
+        repair_calls = 0
+
+        def validate_repair(self, plan, current_scenario, preserved_segments):
+            self.repair_calls += 1
+            return super().validate_repair(plan, current_scenario, preserved_segments)
+
+    planner = Planner()
+    validator = RecordingValidator()
+    result = run_constraint_planning(
+        planner=planner,
+        recorder=ToolInvocationRecorder(),
+        brief=planner_input.planning_brief,
+        scenario=scenario,
+        model_id="offline-selection-test",
+        validator=validator,
+    )
+
+    assert result.success
+    assert result.total_attempts == 1
+    assert planner.output_models == [None, PrimitiveSelection]
+    assert validator.repair_calls == 1
+    assert [item.segment_id for item in result.final_plan.coverage_segments] == [
+        item.primitive_id for item in matrix.care_primitives
+    ]
+
+
+def test_initial_plan_a_contract_remains_recovery_plan_output() -> None:
+    scenario = get_demo_scenario()
+    output_models = []
+
+    class Planner:
+        def __call__(self, _prompt, *, structured_output_model=None):
+            output_models.append(structured_output_model)
+            return SimpleNamespace(structured_output=showcase_plan_a())
+
+    proposal, _ = propose_constraint_plan(
+        planner=Planner(),
+        recorder=ToolInvocationRecorder(),
+        brief=initial_showcase_brief(scenario),
+        scenario=scenario,
+    )
+
+    assert output_models == [RecoveryPlan]
+    assert proposal.coverage_segments == showcase_plan_a().coverage_segments
+    assert PlanValidator().validate(proposal, scenario).valid
+
+
 def test_generic_planning_and_validation_do_not_name_demo_caregiver() -> None:
     root = Path(__file__).parents[1] / "app"
     for relative in (
@@ -864,11 +1021,23 @@ def test_multi_research_replan_invokes_existing_research_agent() -> None:
             )
 
     candidate_plan, _ = plan_b()
+    selected_ids = [
+        candidate_plan.coverage_segments[0].segment_id,
+        (
+            f"care:{candidate_plan.coverage_segments[1].assigned_person_id}:"
+            f"{candidate_plan.coverage_segments[1].window.start.isoformat()}"
+        ),
+        candidate_plan.coverage_segments[-1].segment_id,
+    ]
 
     class Planner:
         def __call__(self, _prompt, *, structured_output_model=None):
             return SimpleNamespace(
-                structured_output=candidate_plan if structured_output_model else None
+                structured_output=(
+                    PrimitiveSelection(selected_primitive_ids=selected_ids)
+                    if structured_output_model is PrimitiveSelection
+                    else None
+                )
             )
 
     result, brief = run_multi_agent_replanning(

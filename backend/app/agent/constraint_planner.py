@@ -185,6 +185,33 @@ class FeasibleAssignmentMatrix(ContractModel):
     continuous_supervision_required: bool = True
     explicit_transport_for_location_changes_required: bool = True
 
+    @model_validator(mode="after")
+    def primitive_ids_are_unique(self) -> "FeasibleAssignmentMatrix":
+        primitive_ids = [
+            primitive.primitive_id
+            for primitive in [*self.care_primitives, *self.transport_primitives]
+        ]
+        if len(primitive_ids) != len(set(primitive_ids)):
+            raise ValueError("feasible primitive IDs must be unique")
+        return self
+
+
+class PrimitiveSelection(ContractModel):
+    """Planner choice over exact deterministic primitives for world-state repair."""
+
+    selected_primitive_ids: list[str] = Field(min_length=1)
+    plan_summary: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def selected_ids_are_unique(self) -> "PrimitiveSelection":
+        if len(self.selected_primitive_ids) != len(set(self.selected_primitive_ids)):
+            raise ValueError("selected primitive IDs must be unique")
+        return self
+
+
+class PrimitiveSelectionError(ValueError):
+    """Raised when a Planner selection violates the authoritative matrix contract."""
+
 
 class PlannerInvocationInput(ContractModel):
     """Complete, conversation-independent input for one plan proposal or repair."""
@@ -875,6 +902,93 @@ def planner_input_digest(planner_input: PlannerInvocationInput) -> str:
     return hashlib.sha256(canonical_planner_input(planner_input).encode()).hexdigest()
 
 
+def _uses_primitive_selection(planner_input: PlannerInvocationInput) -> bool:
+    """Constrain replanning when primitives can materialize the complete plan."""
+
+    matrix = planner_input.feasible_assignment_matrix
+    return (
+        planner_input.planning_brief.planning_mode is PlanningMode.WORLD_STATE_REPLAN
+        and matrix is not None
+        and bool(matrix.care_primitives or matrix.transport_primitives)
+        and not _has_unmaterialized_calendar_changes(matrix)
+    )
+
+
+def _has_unmaterialized_calendar_changes(matrix: FeasibleAssignmentMatrix) -> bool:
+    """Detect selectable care that still requires a non-primitive calendar mutation."""
+
+    people = {person.person_id: person for person in matrix.people}
+    return any(
+        primitive.source is CoverageSource.PARENT
+        and any(
+            constraint.window.start < primitive.window.end
+            and primitive.window.start < constraint.window.end
+            for constraint in people[primitive.assigned_person_id].movable_calendar_constraints
+        )
+        for primitive in matrix.care_primitives
+    )
+
+
+def _materialized_plan_id(selected_primitive_ids: list[str]) -> str:
+    canonical_ids = json.dumps(sorted(selected_primitive_ids), separators=(",", ":"))
+    digest = hashlib.sha256(canonical_ids.encode()).hexdigest()[:20]
+    return f"primitive-selection-{digest}"
+
+
+def materialize_primitive_selection(
+    selection: PrimitiveSelection,
+    matrix: FeasibleAssignmentMatrix,
+) -> RecoveryPlan:
+    """Build an exact plan from Planner-selected authoritative primitive IDs."""
+
+    primitives = [*matrix.care_primitives, *matrix.transport_primitives]
+    by_id = {primitive.primitive_id: primitive for primitive in primitives}
+    selected_ids = selection.selected_primitive_ids
+    unknown = sorted(set(selected_ids) - set(by_id))
+    if unknown:
+        raise PrimitiveSelectionError(f"unknown primitive IDs: {', '.join(unknown)}")
+    required_immutable = {primitive.primitive_id for primitive in primitives if primitive.immutable}
+    missing_immutable = sorted(required_immutable - set(selected_ids))
+    if missing_immutable:
+        raise PrimitiveSelectionError(
+            f"missing required immutable primitive IDs: {', '.join(missing_immutable)}"
+        )
+
+    segments: list[RecoveryPlanSegment] = []
+    for primitive_id in selected_ids:
+        primitive = by_id[primitive_id]
+        if isinstance(primitive, FeasibleCarePrimitive):
+            segment = RecoveryPlanSegment(
+                segment_id=primitive.primitive_id,
+                assigned_person_id=primitive.assigned_person_id,
+                source=primitive.source,
+                segment_type=PlanSegmentType.CARE,
+                window=primitive.window,
+                location_id=primitive.location_id,
+                location_label=primitive.location_label,
+            )
+        else:
+            segment = RecoveryPlanSegment(
+                segment_id=primitive.primitive_id,
+                assigned_person_id=primitive.assigned_person_id,
+                source=primitive.source,
+                segment_type=PlanSegmentType.TRANSPORT,
+                transporter_id=primitive.transporter_id,
+                window=primitive.window,
+                location_id=primitive.location_id,
+                location_label=primitive.location_label,
+                destination_location_id=primitive.destination_location_id,
+                destination_location_label=primitive.destination_location_label,
+            )
+        segments.append(segment)
+    segments.sort(key=lambda item: (item.window.start, item.window.end, item.segment_id))
+    return RecoveryPlan(
+        plan_id=_materialized_plan_id(selected_ids),
+        coverage_segments=segments,
+        validation_state=PlanValidationState.NOT_VALIDATED,
+    )
+
+
 def _log_planner_input(planner_input: PlannerInvocationInput, *, stage: str) -> None:
     log_event(
         "planner_input_prepared",
@@ -891,6 +1005,28 @@ def _log_planner_input(planner_input: PlannerInvocationInput, *, stage: str) -> 
 
 def render_planner_input(planner_input: PlannerInvocationInput) -> str:
     """Render the same complete proposal/repair instruction for both runtime paths."""
+
+    if _uses_primitive_selection(planner_input):
+        action = (
+            "Return a PrimitiveSelection containing only selected_primitive_ids from the supplied "
+            "FeasibleAssignmentMatrix. Select a continuous feasible path for the complete required "
+            "coverage window. Every immutable primitive ID must appear exactly once without "
+            "resizing, relocation, reassignment, or replacement. Do not return or invent segment "
+            "timestamps, people, locations, transport details, costs, or other RecoveryPlan "
+            "fields; application code materializes those authoritative fields."
+        )
+        if planner_input.operation is PlannerOperation.PLAN_REPAIR:
+            action += (
+                " Repair every listed deterministic-validator issue by selecting a different valid "
+                "combination from the same matrix; never invent a primitive."
+            )
+        return (
+            f"{action} Treat the complete structured PlannerInvocationInput below as "
+            "authoritative. "
+            "SoftRankingPreferences rank feasible selections only. Do not depend on prior "
+            "conversation for correctness. "
+            f"PlannerInvocationInput: {canonical_planner_input(planner_input)}"
+        )
 
     if planner_input.operation is PlannerOperation.PLAN_REPAIR:
         action = (
@@ -937,7 +1073,7 @@ class ConstraintPlannerLike(Protocol):
         self,
         prompt: str,
         *,
-        structured_output_model: type[RecoveryPlan] | None = None,
+        structured_output_model: type[ContractModel] | None = None,
     ) -> Any: ...
 
 
@@ -1064,6 +1200,8 @@ def propose_constraint_plan(
         validator_feedback=repair_feedback,
     )
     digest = planner_input_digest(planner_input)
+    selection_required = _uses_primitive_selection(planner_input)
+    output_model: type[ContractModel] = PrimitiveSelection if selection_required else RecoveryPlan
     context_model_calls = 0
     with use_scenario(scenario):
         if resolved_operation is PlannerOperation.REPLANNING:
@@ -1075,10 +1213,18 @@ def propose_constraint_plan(
             )
             context_model_calls = model_call_count(context_result)
         _log_planner_input(planner_input, stage="proposal")
-        result = planner(render_planner_input(planner_input), structured_output_model=RecoveryPlan)
+        result = planner(render_planner_input(planner_input), structured_output_model=output_model)
     if result.structured_output is None:
-        raise RuntimeError("Strands returned no structured RecoveryPlan")
-    proposal = result.structured_output.model_copy(
-        update={"validation_state": PlanValidationState.NOT_VALIDATED, "validation_errors": []}
-    )
+        raise RuntimeError(f"Strands returned no structured {output_model.__name__}")
+    if selection_required:
+        selection = PrimitiveSelection.model_validate(result.structured_output)
+        assert planner_input.feasible_assignment_matrix is not None
+        proposal = materialize_primitive_selection(
+            selection,
+            planner_input.feasible_assignment_matrix,
+        )
+    else:
+        proposal = RecoveryPlan.model_validate(result.structured_output).model_copy(
+            update={"validation_state": PlanValidationState.NOT_VALIDATED, "validation_errors": []}
+        )
     return proposal, context_model_calls + model_call_count(result)

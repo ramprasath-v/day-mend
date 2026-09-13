@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.agent.backup_care_researcher import BackupCareResearchResult, RankedBackupCareCandidate
 from app.agent.config import AgentArchitecture, RecoveryAgentConfig
+from app.agent.constraint_planner import PrimitiveSelection
 from app.agent.multi_agent import run_multi_agent_replanning
 from app.agent.recovery_agent import ToolInvocationRecorder
 from app.agent.recovery_orchestrator import ConstraintCategory, PlanningBrief, PlanningMode
@@ -68,6 +69,19 @@ class FixtureGateway:
 
         class Planner:
             def __call__(self, prompt, *, structured_output_model=None):
+                if replan and structured_output_model is PrimitiveSelection:
+                    candidate = plan_b()[0]
+                    selected_ids = [
+                        candidate.coverage_segments[0].segment_id,
+                        (
+                            f"care:{candidate.coverage_segments[1].assigned_person_id}:"
+                            f"{candidate.coverage_segments[1].window.start.isoformat()}"
+                        ),
+                        candidate.coverage_segments[-1].segment_id,
+                    ]
+                    return SimpleNamespace(
+                        structured_output=PrimitiveSelection(selected_primitive_ids=selected_ids)
+                    )
                 return SimpleNamespace(
                     structured_output=(
                         (plan_b()[0] if replan else showcase_plan_a())

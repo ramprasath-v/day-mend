@@ -11,6 +11,7 @@ from strands.types.exceptions import MaxTokensReachedException
 from app.agent.config import AgentArchitecture, RecoveryAgentConfig
 from app.agent.constraint_planner import (
     CONSTRAINT_PLANNER_INSTRUCTIONS,
+    PrimitiveSelection,
     build_constraint_planner,
 )
 from app.agent.multi_agent import (
@@ -65,7 +66,26 @@ class StubPlanner:
         self.calls.append((prompt, structured_output_model))
         if structured_output_model is None:
             return SimpleNamespace(structured_output=None)
-        return SimpleNamespace(structured_output=self.proposals.pop(0))
+        proposal = self.proposals.pop(0)
+        if structured_output_model is PrimitiveSelection:
+            planner_input = json.loads(prompt.split("PlannerInvocationInput: ", 1)[1])
+            matrix = planner_input["feasible_assignment_matrix"]
+            primitives = [*matrix["care_primitives"], *matrix["transport_primitives"]]
+            selected_ids = [
+                primitive["primitive_id"]
+                for primitive in primitives
+                if primitive.get("immutable", False)
+                or any(
+                    primitive["assigned_person_id"] == segment.assigned_person_id
+                    and primitive["window"] == segment.window.model_dump(mode="json")
+                    and primitive["segment_type"] == segment.segment_type.value
+                    for segment in proposal.coverage_segments
+                )
+            ]
+            return SimpleNamespace(
+                structured_output=PrimitiveSelection(selected_primitive_ids=selected_ids)
+            )
+        return SimpleNamespace(structured_output=proposal)
 
 
 class SequencedOrchestrator:
