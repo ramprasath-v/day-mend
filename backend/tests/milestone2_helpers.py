@@ -85,9 +85,27 @@ def valid_plan_b() -> RecoveryPlan:
         plan_id="plan-b",
         coverage_segments=[
             segment("parent-morning-b", 8, 9, "parent_a", CoverageSource.PARENT),
-            segment("employer-day-b", 9, 16, "employer_backup_care", CoverageSource.CAREGIVER),
+            segment(
+                "employer-morning-b",
+                9,
+                10,
+                "employer_backup_care",
+                CoverageSource.CAREGIVER,
+            ),
+            segment(
+                "employer-replacement-b",
+                10,
+                13,
+                "employer_backup_care",
+                CoverageSource.CAREGIVER,
+            ),
+            segment("parent-afternoon-b", 13, 14, "parent_a", CoverageSource.PARENT),
+            segment("sitter-afternoon-b", 14, 16, "backup_sitter", CoverageSource.CAREGIVER),
         ],
-        calendar_changes=[moved_event("parent_a_standup", 7, 8)],
+        calendar_changes=[
+            moved_event("parent_a_standup", 7, 8),
+            moved_event("parent_a_internal_sync", 14, 15),
+        ],
         estimated_cost=Decimal("48"),
     )
 

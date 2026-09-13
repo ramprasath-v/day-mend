@@ -31,7 +31,7 @@ from app.agent.runtime_contracts import (
     ScenarioContract,
 )
 from app.fixtures import DemoScenario
-from app.models import RecoveryCase, RecoveryEvent
+from app.models import RecoveryCase, RecoveryEvent, RecoveryPlanSegment
 from app.observability import log_event
 from app.services import PlanInvalidationService, PlanValidator, add_researched_caregiver
 
@@ -221,6 +221,7 @@ class AgentCoreRuntimeGateway:
             original_valid_plan=outcome.original_valid_plan,
             invalidated_assumptions=list(outcome.invalidated_assumptions),
             impacted_segments=list(outcome.impacted_segments),
+            impact_reasons=list(outcome.impact_reasons),
             preserved_segments=list(outcome.preserved_segments),
             uncovered_windows=list(outcome.uncovered_windows),
         )
@@ -243,6 +244,7 @@ class AgentCoreRuntimeGateway:
             scenario=outcome.updated_scenario,
             validation_scenario=validation_scenario,
             recovery_case_id=recovery_case.case_id,
+            preserved_segments=list(outcome.preserved_segments),
         )
         metrics = self._aggregate(responses)
         return build_replanning_result(
@@ -265,6 +267,7 @@ class AgentCoreRuntimeGateway:
         scenario: DemoScenario,
         validation_scenario: DemoScenario,
         recovery_case_id: str | None = None,
+        preserved_segments: list[RecoveryPlanSegment] | None = None,
     ) -> tuple[list[PlanningAttempt], list[AgentRuntimeResponse]]:
         responses = [first]
         attempts: list[PlanningAttempt] = []
@@ -287,7 +290,15 @@ class AgentCoreRuntimeGateway:
             }
             log_event("plan_proposed", **attempt_fields)
             log_event("validation_started", **attempt_fields)
-            validation = self._validator.validate(current.plan_candidate, validation_scenario)
+            validation = (
+                self._validator.validate_repair(
+                    current.plan_candidate,
+                    validation_scenario,
+                    preserved_segments or [],
+                )
+                if preserved_segments
+                else self._validator.validate(current.plan_candidate, validation_scenario)
+            )
             validation_fields = {
                 **attempt_fields,
                 "valid": validation.valid,

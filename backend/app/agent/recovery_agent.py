@@ -18,6 +18,7 @@ from app.models import (
     CoverageWindow,
     PlanValidationState,
     RecoveryPlan,
+    RecoveryPlanSegment,
 )
 from app.services import PlanValidationIssue, PlanValidationResult, PlanValidator
 from app.tools import RECOVERY_CONTEXT_TOOLS, use_scenario
@@ -206,6 +207,7 @@ def run_bounded_plan_attempts(
     validator: PlanValidator | None = None,
     max_attempts: int = MAX_PLAN_ATTEMPTS,
     repair_scope: str,
+    preserved_segments: list[RecoveryPlanSegment] | None = None,
 ) -> list[PlanningAttempt]:
     """Validate and repair draft proposals without applying another world-state change."""
 
@@ -223,7 +225,15 @@ def run_bounded_plan_attempts(
                 "validation_errors": [],
             }
         )
-        validation = deterministic_validator.validate(proposed_plan, scenario)
+        validation = (
+            deterministic_validator.validate_repair(
+                proposed_plan,
+                scenario,
+                preserved_segments or [],
+            )
+            if preserved_segments
+            else deterministic_validator.validate(proposed_plan, scenario)
+        )
         attempts.append(
             PlanningAttempt(
                 attempt_number=attempt_number,

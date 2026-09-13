@@ -103,6 +103,7 @@ def process_external_event(
             validator=validator,
             max_attempts=max_attempts,
             repair_scope="Plan-B draft",
+            preserved_segments=list(outcome.preserved_segments),
         )
 
     return build_replanning_result(
@@ -202,6 +203,7 @@ def _replanning_context(outcome) -> str:
         "impacted_segments": [
             segment.model_dump(mode="json") for segment in outcome.impacted_segments
         ],
+        "impact_reasons": [reason.model_dump(mode="json") for reason in outcome.impact_reasons],
         "preserved_segments": [
             segment.model_dump(mode="json") for segment in outcome.preserved_segments
         ],

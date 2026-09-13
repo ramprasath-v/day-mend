@@ -74,6 +74,13 @@ def get_demo_scenario() -> DemoScenario:
                 critical=True,
             ),
             CalendarEvent(
+                event_id="parent_a_afternoon_client_delivery",
+                owner_id="parent_a",
+                title="Afternoon client delivery",
+                window=_window(12, 16),
+                critical=True,
+            ),
+            CalendarEvent(
                 event_id="parent_b_executive_presentation",
                 owner_id="parent_b",
                 title="Executive presentation",

@@ -118,6 +118,7 @@ def execute_runtime_request(
                 original_valid_plan=context.original_valid_plan,
                 invalidated_assumptions=tuple(context.invalidated_assumptions),
                 impacted_segments=tuple(context.impacted_segments),
+                impact_reasons=tuple(context.impact_reasons),
                 preserved_segments=tuple(context.preserved_segments),
                 uncovered_windows=tuple(context.uncovered_windows),
             )

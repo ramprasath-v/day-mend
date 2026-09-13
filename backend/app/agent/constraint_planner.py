@@ -431,13 +431,23 @@ def _log_planner_input(planner_input: PlannerInvocationInput, *, stage: str) -> 
 def render_planner_input(planner_input: PlannerInvocationInput) -> str:
     """Render the same complete proposal/repair instruction for both runtime paths."""
 
-    action = (
-        "Repair every listed deterministic-validator issue and return a complete replacement "
-        "RecoveryPlan. Preserve already-valid segments where feasible and do not introduce new "
-        "gaps, overlaps, conflicts, unavailable-caregiver assignments, or infeasible handoffs."
-        if planner_input.operation is PlannerOperation.PLAN_REPAIR
-        else "Return one complete RecoveryPlan for the full required coverage window."
-    )
+    if planner_input.operation is PlannerOperation.PLAN_REPAIR:
+        action = (
+            "Repair every listed deterministic-validator issue and return a complete replacement "
+            "RecoveryPlan."
+        )
+    else:
+        action = "Return one complete RecoveryPlan for the full required coverage window."
+    if planner_input.preserved_segments:
+        action += (
+            " Every segment in preserved_segments is a hard constraint and must remain materially "
+            "unchanged. Change only affected_segments and their connected handoffs."
+        )
+    if planner_input.operation is PlannerOperation.PLAN_REPAIR:
+        action += (
+            " Do not introduce new gaps, overlaps, conflicts, unavailable-caregiver assignments, "
+            "or infeasible handoffs."
+        )
     initial_constraint_direction = (
         " Compose the plan only from FeasibleAssignmentMatrix primitives. Every care or "
         "transport segment must fit wholly inside its selected primitive's permitted_window. "
@@ -531,7 +541,15 @@ def run_constraint_planning(
             validator_feedback=feedback,
         )
         proposal_model_calls += calls
-        validation = deterministic_validator.validate(proposal, scenario)
+        validation = (
+            deterministic_validator.validate_repair(
+                proposal,
+                scenario,
+                brief.preserved_segments,
+            )
+            if brief.preserved_segments
+            else deterministic_validator.validate(proposal, scenario)
+        )
         attempts.append(
             PlanningAttempt(
                 attempt_number=attempt_number,

@@ -137,6 +137,33 @@ def test_feasible_matrix_is_derived_and_soft_preferences_are_separate() -> None:
     assert matrix.explicit_transport_for_location_changes_required
 
 
+def test_canonical_initial_facts_require_sitter_afternoon_instead_of_parent_a() -> None:
+    scenario = get_demo_scenario()
+    matrix = build_planner_invocation_input(
+        operation=PlannerOperation.INITIAL_PLANNING,
+        brief=initial_showcase_brief(scenario),
+        scenario=scenario,
+    ).feasible_assignment_matrix
+
+    assert matrix is not None
+    people = {item.person_id: item for item in matrix.people}
+    assert people["parent_a"].permitted_care_windows == [minute_window(8, 0, 9)]
+    assert people["grandma"].permitted_care_windows == [minute_window(9, 0, 12, 15)]
+    assert people["backup_sitter"].permitted_care_windows == [minute_window(12, 15, 16)]
+
+    plan = showcase_plan_a()
+    assert PlanValidator().validate(plan, scenario).valid
+    assert plan.coverage_segments[-1].assigned_person_id == "backup_sitter"
+    parent_afternoon = plan.model_copy(deep=True)
+    parent_afternoon.coverage_segments[-1] = parent_afternoon.coverage_segments[-1].model_copy(
+        update={
+            "assigned_person_id": "parent_a",
+            "source": CoverageSource.PARENT,
+        }
+    )
+    assert ValidationErrorCode.PARENT_CRITICAL_CONFLICT in issue_codes(parent_afternoon, scenario)
+
+
 def test_feasible_matrix_tracks_changed_generic_caregiver_and_route_facts() -> None:
     original = get_demo_scenario()
     changed_caregiver = original.caregivers[0].model_copy(
@@ -187,7 +214,7 @@ def test_feasible_matrix_tracks_changed_generic_caregiver_and_route_facts() -> N
 def test_feasible_matrix_normalizes_parent_transport_capability_and_availability() -> None:
     original = get_demo_scenario()
     changed_parent = original.parent_transport_capabilities[0].model_copy(
-        update={"availability": [minute_window(12, 0, 12, 30)]}
+        update={"availability": [minute_window(8, 15, 8, 45)]}
     )
     scenario = replace(
         original,
@@ -207,7 +234,7 @@ def test_feasible_matrix_normalizes_parent_transport_capability_and_availability
         item for item in matrix.transport_primitives if item.transporter_id == "parent_a"
     ]
     assert parent_primitives
-    assert all(item.permitted_window == minute_window(12, 0, 12, 30) for item in parent_primitives)
+    assert all(item.permitted_window == minute_window(8, 15, 8, 45) for item in parent_primitives)
 
     disabled = replace(
         scenario,
@@ -361,7 +388,7 @@ def test_showcase_plan_a_is_physically_feasible_and_depends_on_grandma() -> None
         unavailable_caregiver_ids=(*scenario.unavailable_caregiver_ids, "grandma"),
     )
     assert assess_known_option_recovery_need(without_grandma).requested_windows == [
-        minute_window(9, 0, 12)
+        minute_window(9, 0, 12, 15)
     ]
 
 
@@ -425,13 +452,63 @@ def test_decline_invalidates_related_handoffs_and_preserves_other_care() -> None
     assert list(outcome.uncovered_windows) == [minute_window(8, 45, 12, 15)]
 
 
+def test_connected_handoffs_are_reclassified_with_deterministic_reasons() -> None:
+    outcome = declined_outcome()
+    reasons = {item.segment_id: item for item in outcome.impact_reasons}
+
+    assert reasons["grandma-care"].reason_code == "caregiver_availability_invalidated"
+    for segment_id in ("to-grandma", "grandma-to-home"):
+        assert reasons[segment_id].reason_code == "connected_handoff_invalidated"
+        assert reasons[segment_id].depends_on_segment_id == "grandma-care"
+        assert segment_id not in {segment.segment_id for segment in outcome.preserved_segments}
+    assert outcome.recovery_case.context_state["segment_impact_reasons"] == [
+        reason.model_dump(mode="json") for reason in outcome.impact_reasons
+    ]
+
+
+def test_repair_validator_rejects_unnecessary_change_to_preserved_afternoon() -> None:
+    outcome = declined_outcome()
+    plan, scenario = plan_b()
+    assert PlanValidator().validate_repair(plan, scenario, list(outcome.preserved_segments)).valid
+
+    provider_id = "harbor_nanny_coop"
+    expanded_caregivers = tuple(
+        caregiver.model_copy(update={"availability": [minute_window(8, 45, 16)]})
+        if caregiver.caregiver_id == provider_id
+        else caregiver
+        for caregiver in scenario.caregivers
+    )
+    expanded_scenario = replace(scenario, caregivers=expanded_caregivers)
+    reoptimized = plan.model_copy(
+        update={
+            "coverage_segments": [
+                plan.coverage_segments[0],
+                plan.coverage_segments[1].model_copy(update={"window": minute_window(8, 45, 16)}),
+            ]
+        }
+    )
+
+    assert PlanValidator().validate(reoptimized, expanded_scenario).valid
+    guarded = PlanValidator().validate_repair(
+        reoptimized,
+        expanded_scenario,
+        list(outcome.preserved_segments),
+    )
+    assert not guarded.valid
+    assert {
+        issue.segment_id
+        for issue in guarded.issues
+        if issue.code is ValidationErrorCode.PRESERVED_SEGMENT_CHANGED
+    } == {"sitter-late"}
+
+
 def test_decline_requires_grounded_research_and_exposes_transport_facts() -> None:
     outcome = declined_outcome()
     need = assess_known_option_recovery_need(outcome.updated_scenario)
     search = search_backup_care_candidates(outcome.updated_scenario, need.requested_windows)
 
     assert need.research_needed
-    assert need.requested_windows == [minute_window(9, 0, 12)]
+    assert need.requested_windows == [minute_window(9, 0, 12, 15)]
     assert len(search.eligible_candidates) == 2
     assert any(
         item.location_id == "family_home" and item.travel_minutes_from_family_home == 0
@@ -500,7 +577,7 @@ def test_multi_research_replan_invokes_existing_research_agent() -> None:
             return SimpleNamespace(
                 structured_output=BackupCareResearchResult(
                     research_id="untrusted-model-id",
-                    requested_windows=[minute_window(9, 0, 12)],
+                    requested_windows=[minute_window(9, 0, 12, 15)],
                     ranked_candidates=[
                         RankedBackupCareCandidate(
                             candidate_id=candidate_id,
@@ -541,3 +618,13 @@ def test_multi_research_replan_invokes_existing_research_agent() -> None:
     assert result.research_agent_invocation_count == 1
     assert result.researched_candidate is not None
     assert brief.backup_research_needed
+    assert [segment.segment_id for segment in result.preserved_segments] == [
+        "parent-early",
+        "sitter-late",
+    ]
+    assert [segment.assigned_person_id for segment in result.final_plan.coverage_segments] == [
+        "parent_a",
+        "harbor_nanny_coop",
+        "backup_sitter",
+    ]
+    assert brief.affected_segment_reasons

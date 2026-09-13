@@ -22,7 +22,7 @@ from app.models import (
     RecoveryPlanSegment,
     RecoveryStatus,
 )
-from app.services import PlanValidationIssue
+from app.services import PlanValidationIssue, SegmentImpactReason
 
 RUNTIME_SCHEMA_VERSION = "1.0"
 
@@ -90,6 +90,7 @@ class ReplanningContext(ContractModel):
     original_valid_plan: RecoveryPlan
     invalidated_assumptions: list[PlanAssumption]
     impacted_segments: list[RecoveryPlanSegment]
+    impact_reasons: list[SegmentImpactReason] = Field(default_factory=list)
     preserved_segments: list[RecoveryPlanSegment]
     uncovered_windows: list[CoverageWindow]
 

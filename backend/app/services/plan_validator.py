@@ -25,6 +25,24 @@ from app.models import (
 MONEY_QUANTUM = Decimal("0.01")
 
 
+def _preserved_work_survives(
+    preserved: RecoveryPlanSegment,
+    candidate: RecoveryPlanSegment,
+) -> bool:
+    """Whether candidate retains the full accepted interval with identical material semantics."""
+
+    return (
+        candidate.window.start <= preserved.window.start
+        and candidate.window.end >= preserved.window.end
+        and candidate.assigned_person_id == preserved.assigned_person_id
+        and candidate.source is preserved.source
+        and candidate.segment_type is preserved.segment_type
+        and candidate.location_id == preserved.location_id
+        and candidate.destination_location_id == preserved.destination_location_id
+        and candidate.transporter_id == preserved.transporter_id
+    )
+
+
 class ValidationErrorCode(StrEnum):
     """Stable error taxonomy exposed to the Recovery Agent's repair loop."""
 
@@ -42,6 +60,7 @@ class ValidationErrorCode(StrEnum):
     LOCATION_TRANSITION_INVALID = "location_transition_invalid"
     INSUFFICIENT_TRAVEL_TIME = "insufficient_travel_time"
     TRANSPORTER_UNAVAILABLE = "transporter_unavailable"
+    PRESERVED_SEGMENT_CHANGED = "preserved_segment_changed"
 
 
 class PlanValidationIssue(ContractModel):
@@ -146,6 +165,53 @@ class PlanValidator:
             deterministic_total_cost=total_cost,
             requires_approval=requires_approval,
             validated_plan=validated_plan,
+        )
+
+    def validate_repair(
+        self,
+        plan: RecoveryPlan,
+        scenario: DemoScenario,
+        preserved_segments: list[RecoveryPlanSegment],
+    ) -> PlanValidationResult:
+        """Validate feasibility plus the application-owned Plan A preservation contract."""
+
+        result = self.validate(plan, scenario)
+        preservation_issues: list[PlanValidationIssue] = []
+        for preserved in preserved_segments:
+            if any(
+                _preserved_work_survives(preserved, candidate)
+                for candidate in plan.coverage_segments
+            ):
+                continue
+            preservation_issues.append(
+                PlanValidationIssue(
+                    code=ValidationErrorCode.PRESERVED_SEGMENT_CHANGED,
+                    message=(
+                        f"Previously accepted segment {preserved.segment_id} must remain "
+                        "materially unchanged because deterministic impact analysis preserved it."
+                    ),
+                    subject_id=preserved.assigned_person_id,
+                    segment_id=preserved.segment_id,
+                )
+            )
+        if not preservation_issues:
+            return result
+
+        issues = [*result.issues, *preservation_issues]
+        errors = [issue.message for issue in issues]
+        validated_plan = result.validated_plan.model_copy(
+            update={
+                "validation_state": PlanValidationState.INVALID,
+                "validation_errors": errors.copy(),
+            }
+        )
+        return result.model_copy(
+            update={
+                "valid": False,
+                "issues": issues,
+                "errors": errors,
+                "validated_plan": validated_plan,
+            }
         )
 
     @staticmethod

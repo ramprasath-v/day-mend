@@ -6,6 +6,7 @@ from datetime import datetime
 from app.fixtures import DemoScenario
 from app.models import (
     Caregiver,
+    ContractModel,
     CoverageSource,
     CoverageWindow,
     PlanAssumption,
@@ -23,6 +24,15 @@ from app.models import (
 CAREGIVER_AVAILABLE_ASSUMPTION = "CAREGIVER_AVAILABLE"
 
 
+class SegmentImpactReason(ContractModel):
+    """Deterministic reason a previously accepted segment entered repair scope."""
+
+    segment_id: str
+    reason_code: str
+    message: str
+    depends_on_segment_id: str | None = None
+
+
 @dataclass(frozen=True)
 class InvalidationOutcome:
     """Internal deterministic output consumed by replanning orchestration."""
@@ -33,6 +43,7 @@ class InvalidationOutcome:
     original_valid_plan: RecoveryPlan
     invalidated_assumptions: tuple[PlanAssumption, ...]
     impacted_segments: tuple[RecoveryPlanSegment, ...]
+    impact_reasons: tuple[SegmentImpactReason, ...]
     preserved_segments: tuple[RecoveryPlanSegment, ...]
     uncovered_windows: tuple[CoverageWindow, ...]
 
@@ -138,9 +149,22 @@ class PlanInvalidationService:
             segment
             for segment in original_plan.coverage_segments
             if segment.source is CoverageSource.CAREGIVER
+            and segment.segment_type is PlanSegmentType.CARE
             and segment.assigned_person_id == event.caregiver_id
             and _windows_overlap(segment.window, event.relevant_window)
         ]
+        direct_impacted_ids = {segment.segment_id for segment in impacted}
+        impact_reasons = {
+            segment.segment_id: SegmentImpactReason(
+                segment_id=segment.segment_id,
+                reason_code="caregiver_availability_invalidated",
+                message=(
+                    "The segment depends on caregiver availability invalidated by the "
+                    "recorded decline."
+                ),
+            )
+            for segment in impacted
+        }
         declined = next(
             (
                 caregiver
@@ -167,6 +191,22 @@ class PlanInvalidationService:
                     and previous.destination_location_id == declined.location_id
                 ):
                     impacted_ids.add(previous.segment_id)
+                    impact_reasons.setdefault(
+                        previous.segment_id,
+                        SegmentImpactReason(
+                            segment_id=previous.segment_id,
+                            reason_code="connected_handoff_invalidated",
+                            message=(
+                                "The transport ends at the declined caregiver's location and "
+                                "depends on the invalidated care handoff."
+                            ),
+                            depends_on_segment_id=(
+                                segment.segment_id
+                                if segment.segment_id in direct_impacted_ids
+                                else None
+                            ),
+                        ),
+                    )
             if index + 1 < len(ordered):
                 following = ordered[index + 1]
                 if (
@@ -175,6 +215,22 @@ class PlanInvalidationService:
                     and following.location_id == declined.location_id
                 ):
                     impacted_ids.add(following.segment_id)
+                    impact_reasons.setdefault(
+                        following.segment_id,
+                        SegmentImpactReason(
+                            segment_id=following.segment_id,
+                            reason_code="connected_handoff_invalidated",
+                            message=(
+                                "The transport starts at the declined caregiver's location and "
+                                "depends on the invalidated care handoff."
+                            ),
+                            depends_on_segment_id=(
+                                segment.segment_id
+                                if segment.segment_id in direct_impacted_ids
+                                else None
+                            ),
+                        ),
+                    )
         impacted = [segment for segment in ordered if segment.segment_id in impacted_ids]
         if not impacted or not invalidated:
             raise ValueError("caregiver decline did not invalidate an active plan dependency")
@@ -203,6 +259,11 @@ class PlanInvalidationService:
             {
                 "latest_caregiver_response": event.model_dump(mode="json"),
                 "caregiver_availability": _caregiver_availability_snapshot(updated_scenario),
+                "segment_impact_reasons": [
+                    reason.model_dump(mode="json")
+                    for segment in impacted
+                    if (reason := impact_reasons.get(segment.segment_id)) is not None
+                ],
             }
         )
         updated_case = recovery_case.model_copy(
@@ -230,6 +291,7 @@ class PlanInvalidationService:
             original_valid_plan=original_plan,
             invalidated_assumptions=tuple(invalidated),
             impacted_segments=tuple(impacted),
+            impact_reasons=tuple(impact_reasons[segment.segment_id] for segment in impacted),
             preserved_segments=tuple(preserved),
             uncovered_windows=tuple(uncovered),
         )

@@ -18,7 +18,7 @@ from app.models import (
     RecoveryPlanSegment,
     RecoveryStatus,
 )
-from app.services import InvalidationOutcome, RecoveryNeed
+from app.services import InvalidationOutcome, RecoveryNeed, SegmentImpactReason
 from app.tools import get_childcare_schedule, use_scenario
 
 
@@ -54,6 +54,7 @@ class PlanningBrief(ContractModel):
     required_coverage_window: CoverageWindow
     affected_windows: list[CoverageWindow] = Field(default_factory=list)
     affected_segments: list[RecoveryPlanSegment] = Field(default_factory=list)
+    affected_segment_reasons: list[SegmentImpactReason] = Field(default_factory=list)
     preserved_segments: list[RecoveryPlanSegment] = Field(default_factory=list)
     excluded_caregiver_ids: list[str] = Field(default_factory=list)
     relevant_constraint_categories: list[ConstraintCategory] = Field(min_length=1)
@@ -91,9 +92,9 @@ PlanningBrief for a separate Constraint Planner.
 
 Use get_childcare_schedule to confirm the authoritative required coverage window. Application
 code supplies deterministic impact facts for replanning: affected windows, preserved segments,
-and excluded caregivers. Treat those facts as authoritative. Decide the planning focus, identify
-which constraint categories matter, and give concise planner directives that preserve still-valid
-work where feasible.
+and excluded caregivers. Treat those facts as authoritative: preserved segments are hard repair
+constraints, while affected segments and their connected handoffs are the editable scope. Decide
+the planning focus, identify which constraint categories matter, and give concise directives.
 
 When application-supplied interval analysis explicitly reports known_options_insufficient=true
 and provides unresolved_known_option_windows, set backup_research_needed=true so the application
@@ -166,6 +167,7 @@ def create_initial_planning_brief(
             "required_coverage_window": scenario.required_coverage,
             "affected_windows": [scenario.required_coverage],
             "affected_segments": [],
+            "affected_segment_reasons": [],
             "preserved_segments": [],
             "excluded_caregiver_ids": [],
             "known_options_insufficient": (
@@ -206,6 +208,7 @@ def create_replanning_brief(
         "impacted_segments": [
             segment.model_dump(mode="json") for segment in outcome.impacted_segments
         ],
+        "impact_reasons": [reason.model_dump(mode="json") for reason in outcome.impact_reasons],
         "preserved_segments": [
             segment.model_dump(mode="json") for segment in outcome.preserved_segments
         ],
@@ -216,7 +219,7 @@ def create_replanning_brief(
         scenario=outcome.updated_scenario,
         prompt=(
             "Create the replanning brief after this authoritative world-state change. Decide the "
-            "repair focus and how strongly the Planner should preserve unaffected Plan A work. "
+            "repair focus while retaining every deterministically preserved Plan A segment. "
             f"Deterministic recovery context: {_compact_json(context)}"
         ),
         authoritative_updates={
@@ -231,6 +234,7 @@ def create_replanning_brief(
             "required_coverage_window": outcome.updated_scenario.required_coverage,
             "affected_windows": list(outcome.uncovered_windows),
             "affected_segments": list(outcome.impacted_segments),
+            "affected_segment_reasons": list(outcome.impact_reasons),
             "preserved_segments": list(outcome.preserved_segments),
             "excluded_caregiver_ids": [event.caregiver_id] if event.caregiver_id else [],
             "known_options_insufficient": False,
