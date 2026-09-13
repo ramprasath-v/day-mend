@@ -21,6 +21,7 @@ from app.agent.recovery_agent import (
 from app.agent.recovery_orchestrator import PlanningBrief
 from app.agent.replanning import ReplanningResult, process_external_event
 from app.agent.research_multi_agent import run_research_multi_agent_initial_planning
+from app.application.family_service import FamilyService
 from app.fixtures import DemoScenario, get_demo_scenario
 from app.models import (
     ApprovalStatus,
@@ -34,6 +35,7 @@ from app.models import (
 )
 from app.observability import log_event
 from app.repositories import RecoveryCaseRepository
+from app.repositories.family_repository import InMemoryFamilyRepository
 from app.services import (
     ApprovalService,
     CompletionVerifier,
@@ -285,10 +287,14 @@ class RecoveryApplicationService:
         scenario_factory: Callable[[], DemoScenario] = get_demo_scenario,
         clock: Callable[[], datetime] | None = None,
         id_factory: Callable[[], str] | None = None,
+        family_service: FamilyService | None = None,
     ) -> None:
         self.repository = repository
         self._planning = planning_gateway
         self._scenario_factory = scenario_factory
+        self.family_service = family_service or FamilyService(
+            InMemoryFamilyRepository(), scenario_factory
+        )
         self._clock = clock or (lambda: datetime.now(UTC))
         self._id_factory = id_factory or (lambda: str(uuid4()))
         self._approval = ApprovalService(repository)
@@ -296,7 +302,12 @@ class RecoveryApplicationService:
         self._completion = CompletionVerifier(repository)
 
     def start_recovery(self, command: StartRecoveryCommand) -> RecoveryCase:
-        scenario = self._scenario_factory()
+        from app.agent.runtime_contracts import ScenarioContract
+
+        profile = self.family_service.get()
+        scenario = self.family_service.scenario(profile)
+        profile_snapshot = profile.model_dump(mode="json")
+        scenario_snapshot = ScenarioContract.from_scenario(scenario).model_dump(mode="json")
         disruption = f"{command.disruption_type}: {command.message}"
         case_id = self._id_factory()
         log_event("recovery_started", recovery_case_id=case_id)
@@ -370,6 +381,8 @@ class RecoveryApplicationService:
             update={
                 "events": [disruption_event],
                 "context_state": {
+                    "family_profile_snapshot": profile_snapshot,
+                    "scenario_snapshot": scenario_snapshot,
                     "original_disruption": {
                         "disruption_type": command.disruption_type,
                         "occurred_at": command.occurred_at.isoformat(),
@@ -390,7 +403,7 @@ class RecoveryApplicationService:
             }
         )
         saved = self.repository.save(recovery_case)
-        if planning.researched_candidate is None:
+        if planning.researched_candidate is None and not planning.requires_approval:
             return saved
 
         accepted_validation = planning.attempts[-1].validation.model_copy(
@@ -701,7 +714,18 @@ class RecoveryApplicationService:
         )
 
     def _scenario_for(self, recovery_case: RecoveryCase) -> DemoScenario:
-        scenario = self._scenario_factory()
+        from app.agent.runtime_contracts import ScenarioContract
+
+        snapshot = recovery_case.context_state.get("scenario_snapshot")
+        scenario = (
+            ScenarioContract.model_validate(snapshot).to_scenario()
+            if snapshot is not None
+            else self._scenario_factory()
+        )
+        if snapshot is None and recovery_case.family_policy is not None:
+            from dataclasses import replace
+
+            scenario = replace(scenario, policy=recovery_case.family_policy)
         researched = recovery_case.context_state.get("researched_backup_care_candidate")
         if researched is not None:
             scenario = add_researched_caregiver(

@@ -16,6 +16,8 @@ import { friendlyPerson } from '../../core/recovery-status';
   styleUrl: './coverage-plan.css',
 })
 export class CoveragePlanComponent {
+  readonly currency = input('USD');
+  readonly orderedSegments = computed(() => [...this.plan().coverage_segments].sort((a,b) => Date.parse(a.window.start) - Date.parse(b.window.start)));
   readonly plan = input.required<RecoveryPlan>();
   readonly title = input("Today's recovery plan");
   readonly badge = input('Current plan');
@@ -91,10 +93,10 @@ export class CoveragePlanComponent {
 
   location(segment: CoverageSegment): string {
     if (segment.segment_type === 'TRANSPORT') {
-      const origin = segment.location_label ?? 'Start';
-      const destination = segment.destination_location_label ?? 'Destination';
+      const origin = segment.location_label ?? (segment.location_id ? friendlyPerson(segment.location_id) : 'Start');
+      const destination = segment.destination_location_label ?? (segment.destination_location_id ? friendlyPerson(segment.destination_location_id) : 'Destination');
       return `${origin} → ${destination}`;
     }
-    return segment.location_label ?? 'Location recorded in plan';
+    return segment.location_label ?? (segment.location_id ? friendlyPerson(segment.location_id) : 'Location not supplied');
   }
 }

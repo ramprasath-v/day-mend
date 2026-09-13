@@ -4,7 +4,7 @@ import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 
 import { environment } from '../environments/environment';
-import { App } from './app';
+import { TodayPage as App } from './pages/today';
 import {
   ProgressEventHandler,
   RecoveryProgressService,
@@ -12,6 +12,7 @@ import {
 import { RecoveryProgressEvent } from './core/recovery.models';
 import { RECOVERY_STATUS_COPY } from './core/recovery-status';
 import { approvalCase, planACase, rejectedCase, resolvedCase } from './testing/recovery.fixture';
+import { familyFixture } from './testing/family.fixture';
 
 class FakeRecoveryProgressService {
   handler: ProgressEventHandler | null = null;
@@ -65,6 +66,7 @@ describe('DayMend recovery experience', () => {
 
   function create() {
     const fixture = TestBed.createComponent(App);
+    http.expectOne(environment.apiBaseUrl + '/family').flush(structuredClone(familyFixture));
     fixture.detectChanges();
     return fixture;
   }
@@ -93,17 +95,31 @@ describe('DayMend recovery experience', () => {
     expect(fixture.debugElement.query(By.css('textarea'))).toBeNull();
   });
 
+  it('does not gate the first recovery POST on notification settings loading', () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    fixture.debugElement.query(By.css('app-demo-controls .button--primary')).nativeElement.click();
+    const post = http.expectOne(environment.apiBaseUrl + '/recoveries');
+    expect(post.request.method).toBe('POST');
+    http.expectOne(environment.apiBaseUrl + '/family').flush({}, { status: 503, statusText: 'Unavailable' });
+    fixture.detectChanges();
+    expect(text(fixture)).not.toContain("couldn't complete");
+    post.flush(planACase);
+    fixture.detectChanges();
+    expect(fixture.componentInstance.store.currentCase()?.recovery_case_id).toBe(planACase.recovery_case_id);
+  });
+
   it('shows a prominent neutral working state while recovery is pending', () => {
     const fixture = create();
     fixture.debugElement.query(By.css('app-demo-controls .button--primary')).nativeElement.click();
     fixture.detectChanges();
 
     expect(text(fixture)).toContain('DayMend is rebuilding today’s plan');
-    expect(text(fixture)).toContain('Understanding the change');
-    expect(text(fixture)).toContain('Building your plan');
-    expect(text(fixture)).toContain('Checking every detail');
-    expect(text(fixture)).toContain('Your decision');
-    expect(text(fixture)).toContain('Connecting to DayMend');
+    expect(text(fixture)).toContain('Waiting for the first recovery update.');
+    expect(text(fixture)).toContain('How DayMend handled this');
+    expect(fixture.nativeElement.querySelector('.orchestration')).toBeNull();
+    expect(fixture.nativeElement.querySelector('app-live-recovery details').open).toBeFalse();
+    expect(fixture.nativeElement.querySelector('.journal')).not.toBeNull();
     expect(fixture.debugElement.query(By.css('app-demo-controls'))).toBeNull();
 
     http.expectOne(`${environment.apiBaseUrl}/recoveries`).flush(planACase);
@@ -136,14 +152,12 @@ describe('DayMend recovery experience', () => {
 
     expect(text(fixture)).toContain('Plan needs deterministic repair');
     expect(text(fixture)).toContain('Attempt 1');
-    expect(text(fixture)).toContain('1 validation issue');
+    expect(text(fixture)).toContain('1 validation issues');
     expect(text(fixture)).toContain('coverage_gap');
-    expect(text(fixture)).toContain('WARNING');
-    expect(text(fixture)).toContain('Connecting');
-    expect(fixture.debugElement.queryAll(By.css('.event-feed li')).length).toBe(1);
-    expect(
-      fixture.debugElement.queryAll(By.css('.orchestration__node--warning')).length,
-    ).toBe(1);
+    expect(text(fixture)).toContain('How DayMend handled this');
+    expect(text(fixture)).toContain('reconnecting');
+    expect(fixture.debugElement.queryAll(By.css('.journal li')).length).toBe(1);
+    expect(fixture.debugElement.queryAll(By.css('.orchestration__node--warning')).length).toBe(0);
 
     http.expectOne(`${environment.apiBaseUrl}/recoveries`).flush(planACase);
   });
@@ -198,9 +212,9 @@ describe('DayMend recovery experience', () => {
 
     expect(text(fixture)).toContain('Repairing every listed validation issue');
     expect(text(fixture)).toContain('Grounded replacement recommended');
-    expect(text(fixture)).toContain('Harbor Nanny Coop');
+    expect(text(fixture)).toContain('backup care research');
     expect(text(fixture)).toContain('Human approval required before execution');
-    expect(fixture.debugElement.queryAll(By.css('.orchestration__node--active')).length).toBe(1);
+    expect(fixture.debugElement.queryAll(By.css('.orchestration__node--active')).length).toBe(0);
 
     http.expectOne(`${environment.apiBaseUrl}/recoveries`).flush(planACase);
   });
@@ -227,18 +241,19 @@ describe('DayMend recovery experience', () => {
     expect(request.request.body.expected_version).toBe(1);
     request.flush(approvalCase);
     fixture.detectChanges();
-    expect(text(fixture)).toContain('Recovery Plan B');
-    expect(text(fixture)).toContain('Grandma is no longer available');
-    expect(text(fixture)).toContain('Plan A segments still worked');
-    expect(text(fixture)).toContain('Preserved');
+    expect(text(fixture)).toContain('Plan A → Plan B');
+    expect(text(fixture)).toContain('Unavailable');
+    expect(text(fixture)).toContain('DayMend kept the coverage');
+    expect(text(fixture)).toContain('Kept');
     expect(text(fixture)).toContain('Invalidated');
     expect(text(fixture)).toContain('Replacement');
-    expect(text(fixture)).toContain('Your approval is needed');
-    expect(text(fixture)).toContain('Automatic-spend limit');
+    expect(text(fixture)).toContain('One decision needs you.');
+    expect(text(fixture)).toContain('Awaiting approval');
+    expect(text(fixture)).toContain('automatic-spend limit');
     expect(text(fixture)).toContain('$30');
     expect(text(fixture)).toContain('Approve $92');
     const pageText = text(fixture);
-    expect(pageText.indexOf('What changed')).toBeLessThan(pageText.indexOf('Recovery Plan B'));
+    expect(pageText.indexOf('What changed')).toBeLessThan(pageText.lastIndexOf('One decision needs you'));
   });
 
   it('elevates a new Plan B caregiver using only plan and assumption data', () => {
@@ -279,11 +294,11 @@ describe('DayMend recovery experience', () => {
       .flush(researchedCase);
     fixture.detectChanges();
 
-    expect(text(fixture)).toContain('Backup care recommendation');
+    expect(text(fixture)).toContain('Replacement');
     expect(text(fixture)).toContain('Harbor Nanny Coop');
-    expect(text(fixture)).toContain('In-home care · Family home');
-    expect(text(fixture)).toContain('Covers the affected window');
-    expect(text(fixture)).toContain('Every minute checked');
+    expect(text(fixture)).toContain('Family home');
+    expect(fixture.nativeElement.querySelectorAll('.now [data-classification="Replacement"]').length).toBe(1);
+    expect(text(fixture)).toContain('The proposed coverage has been checked.');
     expect(text(fixture)).not.toContain('rating');
     expect(text(fixture)).not.toContain('review');
   });
@@ -334,8 +349,10 @@ describe('DayMend recovery experience', () => {
     expect(request.request.body).toEqual({ decision: 'APPROVE', expected_version: 3 });
     request.flush(resolvedCase);
     fixture.detectChanges();
-    expect(text(fixture)).toContain('Day recovered');
-    expect(text(fixture)).toContain('Childcare coverage restored through 4:00 PM');
+    expect(text(fixture)).toContain('Your day is recovered.');
+    expect(text(fixture)).toContain('Recovery resolved');
+    expect(fixture.nativeElement.querySelector('app-plan-change')).not.toBeNull();
+    expect(text(fixture)).toContain('Completion verified within the demo scenario');
     expect(text(fixture)).toContain('Recovery action completed');
     expect(text(fixture)).toContain('Final childcare coverage verified');
   });
@@ -362,8 +379,8 @@ describe('DayMend recovery experience', () => {
     expect(text(fixture)).toContain('DayMend is looking for another option');
     expect(text(fixture)).toContain('Recovery not approved');
     expect(text(fixture)).toContain('No recovery actions were taken');
-    expect(text(fixture)).toContain('Plan B not approved');
-    expect(text(fixture)).not.toContain('Day recovered');
+    expect(text(fixture)).toContain('no alternative has been confirmed');
+    expect(text(fixture)).not.toContain('Your day is recovered.');
     expect(text(fixture)).not.toContain('Simulated execution');
     expect(text(fixture)).not.toContain('Deterministic verifier');
     expect(text(fixture)).not.toContain('Plan C');
@@ -384,8 +401,9 @@ describe('DayMend recovery experience', () => {
     fixture.detectChanges();
 
     expect(text(fixture)).toContain('inconsistent approval result');
-    expect(text(fixture)).toContain('Your approval is needed');
-    expect(text(fixture)).not.toContain('Day recovered');
+    expect(text(fixture)).toContain('One decision needs you.');
+    expect(text(fixture)).toContain('Recovery needs attention');
+    expect(text(fixture)).not.toContain('Your day is recovered.');
   });
 
   it('shows a safe error message without backend details', () => {
@@ -417,7 +435,9 @@ describe('DayMend recovery experience', () => {
     expect(request.request.method).toBe('GET');
     request.flush(resolvedCase);
     fixture.detectChanges();
-    expect(text(fixture)).toContain('Day recovered');
+    expect(text(fixture)).toContain('Your day is recovered.');
+    expect(text(fixture)).toContain('Recovery resolved');
+    expect(fixture.nativeElement.querySelector('app-plan-change')).not.toBeNull();
   });
 
   it('resets the local demo without calling a backend reset endpoint', () => {
@@ -435,9 +455,10 @@ describe('DayMend recovery experience', () => {
 
   it('shows the current architecture only inside compact technical details', () => {
     const fixture = create();
+    startAndFlush(fixture);
 
     expect(text(fixture)).toContain('AgentCore · 3 Strands agents · Claude Sonnet 4.5');
-    expect(text(fixture)).toContain('How DayMend works');
+    expect(text(fixture)).toContain('How DayMend handled this');
     expect(text(fixture)).not.toContain('One recovery agent');
     expect(text(fixture)).not.toContain('Amazon Nova Pro');
   });

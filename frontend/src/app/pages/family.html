@@ -1,0 +1,67 @@
+<div class="reading-column">
+  <header class="page-heading"><p class="eyebrow">Family · shared demo household</p><h1>Who can help?</h1>
+    <p>Facts about your care circle, and preferences for a day that works.</p>
+    <p class="muted">Saved edits apply to the next recovery. A day already being repaired keeps its original family snapshot.</p>
+  </header>
+  @if (error()) { <p class="error" role="alert">{{ error() }}</p><button class="button button--quiet" (click)="load()" [disabled]="saving()">Reload saved settings</button> }
+  @if (message()) { <p class="feedback" role="status">{{ message() }}</p> }
+  @if (profile(); as family) {
+    <fieldset [disabled]="saving()">
+    <section class="open-section"><h2>Care circle</h2>
+      <p class="muted">Times shown in {{ timezone }}. Empty availability means this caregiver cannot cover care. Parent calendars and driving windows remain scenario facts.</p>
+      @for (person of family.caregivers; track person.caregiver_id) {
+        <article class="person">
+          <div class="person-heading"><h3>{{ person.name }}</h3><button class="button button--quiet" (click)="edit(person.caregiver_id)" [disabled]="editing() !== null">Edit {{ person.name }}</button></div>
+          @if (editing() === person.caregiver_id) {
+            <div class="edit-grid">
+              <label>Name<input [(ngModel)]="person.name" required maxlength="100"></label>
+              <label>Relationship<input [(ngModel)]="person.relationship" required maxlength="100"></label>
+              <label>Care location<select [(ngModel)]="person.location_id">@for (location of family.locations; track location.location_id) { <option [value]="location.location_id">{{ location.location_label }}</option> }</select></label>
+            </div>
+            @for (window of person.availability; track $index) {
+              <div class="edit-grid">
+                <label>Available from<input type="datetime-local" [ngModel]="localDateTime(window.start)" (ngModelChange)="setTime(window, 'start', $event)" required></label>
+                <label>Available until<input type="datetime-local" [ngModel]="localDateTime(window.end)" (ngModelChange)="setTime(window, 'end', $event)" required></label>
+              </div>
+              <button class="button button--quiet" (click)="person.availability.splice($index, 1)">Remove this window</button>
+            }
+            <button class="button button--quiet" (click)="person.availability.push({start: '', end: ''})">Add availability window</button>
+            <label class="toggle"><input type="checkbox" [(ngModel)]="person.can_transport_child">Can transport the child during available windows</label>
+            <label class="toggle"><input type="checkbox" [(ngModel)]="person.is_trusted">Trusted caregiver</label>
+            <p class="muted">The existing hard trust rule still applies. Turning trust off excludes this caregiver under the current policy.</p>
+            <div class="actions"><button class="button button--primary" (click)="save('facts')">{{ saving() ? 'Saving…' : 'Save caregiver' }}</button><button class="button button--quiet" (click)="cancel()">Cancel</button></div>
+          } @else {
+            <p>{{ person.relationship }} · {{ person.is_trusted ? 'Trusted' : 'Not trusted' }} · {{ person.can_transport_child ? 'Can transport' : 'No transport' }}</p>
+            @for (location of family.locations; track location.location_id) { @if (location.location_id === person.location_id) { <p>{{ location.location_label }}</p> } }
+            @for (window of person.availability; track $index) { <p>{{ window.start | date:'MMM d, h:mm a' }}–{{ window.end | date:'MMM d, h:mm a' }}</p> }
+            @empty { <p>No care availability.</p> }
+          }
+        </article>
+      }
+    </section>
+    <section class="open-section"><h2>Required care</h2>
+      @if (editing() === 'schedule') {
+        <div class="edit-grid">
+          <label>Care starts<input type="datetime-local" [ngModel]="localDateTime(family.required_care_schedule.start)" (ngModelChange)="setTime(family.required_care_schedule, 'start', $event)" required></label>
+          <label>Care ends<input type="datetime-local" [ngModel]="localDateTime(family.required_care_schedule.end)" (ngModelChange)="setTime(family.required_care_schedule, 'end', $event)" required></label>
+        </div>
+        <div class="actions"><button class="button button--primary" (click)="save('facts')">{{ saving() ? 'Saving…' : 'Save care window' }}</button><button class="button button--quiet" (click)="cancel()">Cancel</button></div>
+      } @else {
+        <p>{{ family.required_care_schedule.start | date:'MMM d, h:mm a' }}–{{ family.required_care_schedule.end | date:'MMM d, h:mm a' }}</p>
+        <button class="button button--quiet" (click)="edit('schedule')" [disabled]="editing() !== null">Edit required care</button>
+      }
+      <p class="muted">One dated care window, not a recurring calendar. Extending it does not extend caregiver or parent availability.</p>
+    </section>
+    <section class="open-section"><h2>Care preferences</h2><p>These guide DayMend when more than one feasible recovery exists. They never override safety rules.</p>
+      <fieldset [disabled]="editing() !== null">
+        <label class="toggle"><input type="checkbox" [(ngModel)]="family.preferences.prefer_trusted_caregivers">Prefer trusted caregivers</label>
+        <label class="toggle"><input type="checkbox" [(ngModel)]="family.preferences.prefer_in_home_care">Prefer in-home care</label>
+        <label class="toggle"><input type="checkbox" [(ngModel)]="family.preferences.prefer_fewer_handoffs">Minimize handoffs</label>
+        <label class="toggle"><input type="checkbox" [(ngModel)]="family.preferences.protect_critical_meetings">Protect critical meetings</label>
+        <p class="muted">Critical meetings are already protected by hard validation. Turning this preference off does not permit conflicts.</p>
+        <button class="button button--primary" (click)="save('preferences')">{{ saving() ? 'Saving…' : 'Save preferences' }}</button>
+      </fieldset>
+    </section>
+    </fieldset>
+  } @else if (!error()) { <p role="status">Loading your family settings…</p> }
+</div>

@@ -4,8 +4,8 @@ import { RecoveryPlan } from '../../core/recovery.models';
 import { approvalCase } from '../../testing/recovery.fixture';
 import { CoveragePlanComponent } from './coverage-plan';
 
-describe('CoveragePlanComponent recommendation layout', () => {
-  it('keeps every recommendation fact inside a narrow plan column', async () => {
+describe('CoveragePlanComponent agenda layout', () => {
+  it('keeps every schedule fact inside a narrow plan column', async () => {
     await TestBed.configureTestingModule({ imports: [CoveragePlanComponent] }).compileComponents();
     const fixture = TestBed.createComponent(CoveragePlanComponent);
     const priorPlan = approvalCase.previous_plans[0];
@@ -39,30 +39,12 @@ describe('CoveragePlanComponent recommendation layout', () => {
     for (const width of [700, 421, 326, 300]) {
       fixture.nativeElement.style.width = `${width}px`;
       fixture.detectChanges();
-      const recommendation = fixture.nativeElement.querySelector(
-        '.plan__recommendation',
-      ) as HTMLElement;
-      const facts = fixture.nativeElement.querySelector('.recommendation__facts') as HTMLElement;
       const planElement = fixture.nativeElement.querySelector('.plan') as HTMLElement;
-      const planBounds = planElement.getBoundingClientRect();
-      const factsRight = facts.getBoundingClientRect().right;
-
-      expect(planElement.scrollWidth)
-        .withContext(`plan at ${width}px`)
-        .toBeLessThanOrEqual(planElement.clientWidth);
-      expect(recommendation.scrollWidth)
-        .withContext(`recommendation at ${width}px`)
-        .toBeLessThanOrEqual(recommendation.clientWidth);
-      expect(recommendation.getBoundingClientRect().right)
-        .withContext(`recommendation boundary at ${width}px`)
-        .toBeLessThanOrEqual(planBounds.right + 1);
-      for (const child of Array.from(facts.children) as HTMLElement[]) {
-        expect(child.getBoundingClientRect().left)
-          .withContext(`${child.textContent?.trim()} left boundary at ${width}px`)
-          .toBeGreaterThanOrEqual(planBounds.left - 1);
-        expect(child.getBoundingClientRect().right)
-          .withContext(`${child.textContent?.trim()} at ${width}px`)
-          .toBeLessThanOrEqual(factsRight + 1);
+      expect(planElement.scrollWidth).withContext('agenda width ' + width).toBeLessThanOrEqual(planElement.clientWidth);
+      expect(planElement.textContent).toContain('Harbor Nanny Coop');
+      expect(planElement.textContent).toContain('$72.00');
+      for (const row of Array.from(planElement.querySelectorAll<HTMLElement>('.coverage-row'))) {
+        expect(getComputedStyle(row).textOverflow).not.toBe('ellipsis');
       }
     }
   });

@@ -108,49 +108,51 @@ describe('PlanChangeComponent', () => {
     return fixture.nativeElement;
   }
 
-  it('shows exactly two materially preserved and two invalidated segments', () => {
-    const cards = render().querySelectorAll<HTMLElement>('.change__grid article');
-    const preserved = cards[0].textContent ?? '';
-    const invalidated = cards[1].textContent ?? '';
 
-    expect(preserved).toContain('Preserved · 2');
-    expect(preserved).toContain('Parent A');
-    expect(preserved).toContain('Backup sitter');
-    expect(preserved).not.toContain('Transport with Parent A');
-    expect(invalidated).toContain('Invalidated · 2');
-    expect(invalidated).toContain('Grandma');
-    expect(invalidated).toContain('Transport with Grandma');
+  it('shows two kept, two invalidated and one replacement', () => {
+    const el = render();
+    expect(el.textContent).toContain('Kept · 2');
+    expect(el.textContent).toContain('Invalidated · 2');
+    expect(el.textContent).toContain('Replacement · 1');
+    expect(el.querySelectorAll('[data-classification="Kept"]').length).toBe(2);
+    expect(el.querySelectorAll('[data-classification="Unavailable"]').length).toBe(2);
   });
-
-  it('preserves semantically identical segments even when their IDs change', () => {
-    const preserved = render().querySelector<HTMLElement>('.change__grid article');
-    const rows = preserved?.querySelectorAll('.segment') ?? [];
-
-    expect(rows.length).toBe(2);
-    expect(preserved?.textContent).toContain('Parent A');
-    expect(preserved?.textContent).toContain('Backup sitter');
+  it('renders replacement only once across its full interval', () => {
+    const el = render();
+    expect(el.querySelectorAll('[data-classification="Replacement"]').length).toBe(1);
+    expect(el.querySelector('.now')?.textContent).toContain('Harbor Nanny Coop');
+    expect(el.querySelectorAll('.repair-interval').length).toBe(1);
   });
-
-  it('shows only the new Harbor Nanny Coop segment as the replacement', () => {
-    const cards = render().querySelectorAll<HTMLElement>('.change__grid article');
-    const replacement = cards[2];
-
-    expect(replacement.textContent).toContain('Replacement · 1');
-    expect(replacement.textContent).toContain('Harbor Nanny Coop');
-    expect(replacement.querySelectorAll('.segment').length).toBe(1);
+  it('keeps identical segments with different IDs anchored outside the changed interval', () => {
+    const el = render();
+    const kept = el.querySelectorAll('.kept');
+    expect(kept.length).toBe(2);
+    expect(kept[0].textContent).toContain('Parent A');
+    expect(kept[1].textContent).toContain('Backup sitter');
   });
-
-  it('keeps complete time and description fields in separate non-truncated grid cells', () => {
-    const rows = render().querySelectorAll<HTMLElement>('.segment');
-
-    for (const row of rows) {
-      const time = row.querySelector('strong');
-      const description = row.querySelector<HTMLElement>('span');
-      expect(time?.textContent).toContain('–');
-      expect(description?.textContent?.trim().length).toBeGreaterThan(0);
-      expect(getComputedStyle(row).display).toBe('grid');
-      expect(getComputedStyle(description!).overflow).not.toBe('hidden');
-      expect(getComputedStyle(description!).textOverflow).not.toBe('ellipsis');
+  it('shows removed transport only when validated replacement care covers it', () => {
+    expect(render().querySelector('[data-classification="Transport no longer needed"]')?.textContent).toContain('Parent A');
+    const fixture = TestBed.createComponent(PlanChangeComponent);
+    fixture.componentRef.setInput('recovery', { ...recovery, active_plan: { ...recovery.active_plan, validation_state: 'NOT_VALIDATED' } });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-classification="Transport no longer needed"]')).toBeNull();
+  });
+  it('does not claim transport is unnecessary when there is a coverage gap', () => {
+    const fixture = TestBed.createComponent(PlanChangeComponent);
+    fixture.componentRef.setInput('recovery', { ...recovery, active_plan: { ...recovery.active_plan, coverage_segments: [planB[0], planB[2]] } });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-classification="Transport no longer needed"]')).toBeNull();
+  });
+  it('retains the repaired schedule after resolution without clipping narrow columns', () => {
+    const fixture = TestBed.createComponent(PlanChangeComponent);
+    fixture.componentRef.setInput('recovery', { ...recovery, status: 'RESOLVED' });
+    fixture.detectChanges();
+    for (const width of [1200, 900, 700, 350]) {
+      fixture.nativeElement.style.width = width + 'px';
+      const el = fixture.nativeElement.querySelector('.change') as HTMLElement;
+      expect(el.scrollWidth).toBeLessThanOrEqual(el.clientWidth);
+      expect(el.querySelector('.repair-interval')).not.toBeNull();
+      expect(getComputedStyle(el.querySelector('strong')!).textOverflow).not.toBe('ellipsis');
     }
   });
 });

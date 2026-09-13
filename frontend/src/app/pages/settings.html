@@ -1,0 +1,39 @@
+<div class="reading-column">
+  <header class="page-heading"><p class="eyebrow">Settings · shared demo household</p><h1>When should DayMend ask you?</h1>
+    <p>Rules for the next recovery. A day already in progress keeps the rules it started with.</p>
+  </header>
+  @if (error()) { <p class="error" role="alert">{{ error() }}</p><button class="button button--quiet" (click)="load()" [disabled]="saving()">Reload saved settings</button> }
+  @if (message()) { <p class="feedback" role="status">{{ message() }}</p> }
+  @if (profile(); as family) {
+    <fieldset [disabled]="saving()">
+      <section class="open-section"><h2>Automatic spending</h2>
+        <label>Automatic spending limit · {{ family.policy.currency }}
+          <input type="text" inputmode="decimal" [(ngModel)]="family.policy.automatic_spend_limit" required maxlength="11" aria-describedby="spend-help">
+        </label>
+        <p id="spend-help">DayMend may proceed without asking when new spend is at or below this amount, unless another approval rule applies.</p>
+      </section>
+      <section class="open-section"><h2>Approval rules</h2>
+        <label class="toggle"><input type="checkbox" [(ngModel)]="family.policy.require_approval_for_unfamiliar_paid_caregiver">Require approval for unfamiliar paid providers</label>
+        <p class="muted">An unfamiliar paid provider can still require your approval even below the spending limit. Coverage, trust and travel checks cannot be overridden.</p>
+      </section>
+      <section class="open-section"><h2>Backup care</h2>
+        <label class="toggle"><input type="checkbox" [(ngModel)]="family.policy.allow_external_backup_providers">Allow external backup providers</label>
+        <p class="muted">When off, DayMend will not research or use external providers. It may be unable to recover a day using known care alone.</p>
+        <label class="toggle"><input type="checkbox" [(ngModel)]="family.policy.allow_provider_transport">Allow provider transportation</label>
+        <p class="muted">When off, external providers cannot transport the child. Eligible care that needs no provider transport is still allowed.</p>
+      </section>
+      <section class="open-section"><h2>In-app updates</h2>
+        <label>Show updates
+          <select [(ngModel)]="family.notification_mode">
+            <option value="decisions_only">Only when I need to make a decision</option>
+            <option value="meaningful_changes">Every meaningful change</option>
+            <option value="completion_only">When recovery is complete</option>
+          </select>
+        </label>
+        <p class="muted">Controls the in-app activity summary on the next recovery. The full journal remains available. Required approval and errors always remain visible. No email or SMS is sent.</p>
+      </section>
+      <button class="button button--primary" (click)="save()">{{ saving() ? 'Saving…' : 'Save settings' }}</button>
+    </fieldset>
+    <section class="open-section"><p class="muted">Backup-provider inventory is synthetic. Booking, calendar, messaging and payment actions are simulated.</p></section>
+  } @else if (!error()) { <p role="status">Loading your settings…</p> }
+</div>

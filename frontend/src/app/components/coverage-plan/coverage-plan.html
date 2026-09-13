@@ -1,102 +1,17 @@
-<section class="card plan" aria-labelledby="coverage-title">
-  <header class="section-heading">
-    <div>
-      <p class="eyebrow">{{ badge() }}</p>
-      <h2 id="coverage-title">{{ title() }}</h2>
-    </div>
-    <div class="plan__total">
-      <span>Recovery cost</span>
-      <strong>{{ money(plan().estimated_cost) | currency: 'USD' : 'symbol' : '1.0-0' }}</strong>
-    </div>
-  </header>
-  @if (replacementRecommendation(); as replacement) {
-    <aside class="plan__recommendation" aria-label="Backup care recommendation">
-      <div class="recommendation__heading">
-        <span>Backup care recommendation</span>
-        <strong>{{ friendlyPerson(replacement.caregiverId) }}</strong>
-      </div>
-      <div class="recommendation__facts">
-        <time>{{ replacement.start | date: 'h:mm a' }}–{{ replacement.end | date: 'h:mm a' }}</time>
-        <span>{{ replacement.location }}</span>
-        <b>{{ replacement.cost | currency: 'USD' : 'symbol' : '1.0-0' }}</b>
-      </div>
-      <div class="recommendation__reasons">
-        <span>✓ Covers the affected window</span>
-        @if (transportCount() === 0) {
-          <span>✓ No transport segment required</span>
-        }
-        @if (coverageEnd()) {
-          <span>✓ Protects coverage through {{ coverageEnd() | date: 'h:mm a' }}</span>
-        }
-        @if (plan().validation_state === 'VALID') {
-          <span>✓ Every minute checked</span>
-        }
-        @if (requiresApproval()) {
-          <span>! Approval required</span>
-        }
-      </div>
-    </aside>
-  }
+<section class="plan">
+  <header><p class="eyebrow">{{ badge() }}</p><h2>Today's care</h2><p class="money">{{ money(plan().estimated_cost) | currency: currency():'symbol':'1.2-2' }}</p></header>
   <div class="coverage-list">
-    @for (segment of plan().coverage_segments; track segment.segment_id) {
-      <article class="coverage-row">
-        <span
-          class="coverage-row__type"
-          [class.transport]="segment.segment_type === 'TRANSPORT'"
-          aria-hidden="true"
-        >
-          {{ segment.segment_type === 'TRANSPORT' ? '→' : '•' }}
-        </span>
-        <time>
-          {{ segment.window.start | date: 'h:mm' }}–{{ segment.window.end | date: 'h:mm a' }}
-        </time>
-        <div>
-          @if (segment.segment_type === 'TRANSPORT') {
-            <strong>
-              Transport ·
-              {{ friendlyPerson(segment.transporter_id ?? segment.assigned_person_id) }}
-            </strong>
-          } @else {
-            <strong>{{ friendlyPerson(segment.assigned_person_id) }}</strong>
-          }
-          <span>{{ location(segment) }}</span>
-        </div>
-        @if (money(segment.estimated_cost) > 0) {
-          <b>{{ money(segment.estimated_cost) | currency: 'USD' : 'symbol' : '1.0-0' }}</b>
-        } @else {
-          <b class="included">Included</b>
-        }
+    @for (segment of orderedSegments(); track segment.segment_id) {
+      <article class="coverage-row" [class.transport]="segment.segment_type === 'TRANSPORT'">
+        <time>{{ segment.window.start | date:'h:mm a' }}–{{ segment.window.end | date:'h:mm a' }}</time>
+        <div><strong>{{ segment.segment_type === 'TRANSPORT' ? 'Transport · ' : '' }}{{ friendlyPerson(segment.transporter_id ?? segment.assigned_person_id) }}</strong><p>{{ location(segment) }}</p></div>
+        @if (money(segment.estimated_cost) > 0) { <span class="money">{{ money(segment.estimated_cost) | currency: currency():'symbol':'1.2-2' }}</span> }
       </article>
     }
   </div>
   @if (plan().calendar_changes.length) {
-    <footer class="plan__footer">
-      <span class="calendar-icon" aria-hidden="true">□</span>
-      <strong
-        >{{ plan().calendar_changes.length }} calendar adjustment{{
-          plan().calendar_changes.length === 1 ? '' : 's'
-        }}</strong
-      >
-      <span>keeps critical work commitments protected</span>
-    </footer>
+    <details><summary>Calendar adjustments · {{ plan().calendar_changes.length }}</summary>
+    @for (change of plan().calendar_changes; track change.event_id) { <p>{{ change.title }} · {{ change.window.start | date:'h:mm a' }}–{{ change.window.end | date:'h:mm a' }}</p> }
+    </details>
   }
-  <aside class="plan__why" aria-label="Why this plan">
-    <strong>Why this plan</strong>
-    <span>✓ Every minute checked</span>
-    @if (careAtHome()) {
-      <span>⌂ In-home care</span>
-    }
-    @if (transportCount() === 0) {
-      <span>✓ No transport segment required</span>
-    }
-    @if (coverageEnd()) {
-      <span>✓ Coverage through {{ coverageEnd() | date: 'h:mm a' }}</span>
-    }
-    @if (automaticSpendLimit() !== null) {
-      <span>
-        Approval above
-        {{ money(automaticSpendLimit()) | currency: 'USD' : 'symbol' : '1.0-0' }}
-      </span>
-    }
-  </aside>
 </section>

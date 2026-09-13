@@ -317,6 +317,15 @@ class PlanValidator:
                         segment_id=segment.segment_id,
                     )
                 )
+            if caregiver.external_provider and not scenario.policy.allow_external_backup_providers:
+                issues.append(
+                    PlanValidationIssue(
+                        code=ValidationErrorCode.HARD_POLICY_VIOLATION,
+                        message="External backup providers are disabled by family policy.",
+                        subject_id=person_id,
+                        segment_id=segment.segment_id,
+                    )
+                )
             if (
                 scenario.policy.require_trusted_caregiver
                 or not scenario.policy.unapproved_caregiver_allowed
@@ -541,7 +550,15 @@ class PlanValidator:
         capability = parent_transport.get(transporter_id)
         caregiver = caregivers.get(transporter_id)
         capable = (capability is not None and capability.can_transport_child) or (
-            caregiver is not None and caregiver.can_transport_child
+            caregiver is not None
+            and caregiver.can_transport_child
+            and (
+                not caregiver.external_provider
+                or (
+                    scenario.policy.allow_provider_transport
+                    and scenario.policy.allow_external_backup_providers
+                )
+            )
         )
         availability = (
             capability.availability

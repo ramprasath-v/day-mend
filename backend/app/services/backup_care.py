@@ -15,6 +15,7 @@ class BackupCareIneligibilityCode(StrEnum):
     UNVERIFIED = "UNVERIFIED"
     BACKGROUND_CHECK_REQUIRED = "BACKGROUND_CHECK_REQUIRED"
     CHILD_AGE_UNSUPPORTED = "CHILD_AGE_UNSUPPORTED"
+    EXTERNAL_PROVIDERS_DISABLED = "EXTERNAL_PROVIDERS_DISABLED"
 
 
 class RecoveryNeed(ContractModel):
@@ -48,7 +49,17 @@ def assess_known_option_recovery_need(scenario: DemoScenario) -> RecoveryNeed:
     required = scenario.required_coverage
     available: list[CoverageWindow] = []
     for caregiver in scenario.caregivers:
-        if caregiver.caregiver_id not in scenario.unavailable_caregiver_ids:
+        if (
+            caregiver.caregiver_id not in scenario.unavailable_caregiver_ids
+            and (not caregiver.external_provider or scenario.policy.allow_external_backup_providers)
+            and (
+                caregiver.is_trusted
+                or (
+                    not scenario.policy.require_trusted_caregiver
+                    and scenario.policy.unapproved_caregiver_allowed
+                )
+            )
+        ):
             available.extend(caregiver.availability)
     for parent_id in scenario.parent_ids:
         parent_windows = [required]
@@ -66,7 +77,7 @@ def assess_known_option_recovery_need(scenario: DemoScenario) -> RecoveryNeed:
     return RecoveryNeed(
         requested_windows=uncovered,
         known_options_insufficient=bool(uncovered),
-        research_needed=bool(uncovered),
+        research_needed=bool(uncovered) and scenario.policy.allow_external_backup_providers,
         already_considered_caregiver_ids=[
             caregiver.caregiver_id for caregiver in scenario.caregivers
         ],
@@ -82,7 +93,11 @@ def search_backup_care_candidates(
     assessments: list[BackupCareCandidateAssessment] = []
     eligible: list[BackupCareCandidate] = []
     for candidate in scenario.backup_care_candidates:
+        if not scenario.policy.allow_provider_transport:
+            candidate = candidate.model_copy(update={"can_transport_child": False})
         codes: list[BackupCareIneligibilityCode] = []
+        if not scenario.policy.allow_external_backup_providers:
+            codes.append(BackupCareIneligibilityCode.EXTERNAL_PROVIDERS_DISABLED)
         if not all(_is_covered(window, candidate.availability) for window in requested_windows):
             codes.append(BackupCareIneligibilityCode.UNAVAILABLE)
         if scenario.policy.require_verified_backup_provider and not candidate.verified:
@@ -119,6 +134,8 @@ def add_researched_caregiver(
 ) -> DemoScenario:
     """Convert one grounded recommendation into authoritative Planner/Validator context."""
 
+    if not scenario.policy.allow_external_backup_providers:
+        raise ValueError("External backup providers are disabled by family policy.")
     caregiver = Caregiver(
         caregiver_id=candidate.candidate_id,
         name=candidate.display_name,
@@ -134,7 +151,8 @@ def add_researched_caregiver(
         location_id=candidate.location_id,
         location_label=candidate.location_label,
         travel_minutes_from_family_home=candidate.travel_minutes_from_family_home,
-        can_transport_child=candidate.can_transport_child,
+        can_transport_child=candidate.can_transport_child
+        and scenario.policy.allow_provider_transport,
     )
     return DemoScenario(
         disruption=scenario.disruption,

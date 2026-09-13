@@ -1,0 +1,10 @@
+:host { display: block; }
+.day-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2.5rem; margin: 2rem 0; }
+.day-layout.has-decision { grid-template-columns: minmax(0, 1fr) minmax(250px, .38fr); align-items: start; }
+.day-schedule { min-width: 0; }
+.normal-day { max-width: 820px; padding: 1rem 0 3rem; }
+.normal-span { border-left: 2px solid var(--green); padding: 1rem 2rem; display: grid; gap: .4rem; }
+.normal-span strong { font-size: 1.25rem; font-weight: 600; }
+.normal-span span, .verification { color: var(--muted); }
+.error-banner { border-left: 3px solid var(--red); padding: 0 1rem; }
+@media(max-width: 1050px) { .day-layout.has-decision { grid-template-columns: minmax(0, 1fr); } }

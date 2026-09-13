@@ -91,6 +91,8 @@ def client(repository: InMemoryRecoveryCaseRepository) -> TestClient:
             at(9, 17),
             at(9, 18),
             at(9, 19),
+            at(9, 20),
+            at(9, 21),
         ]
     )
     service = RecoveryApplicationService(
@@ -141,8 +143,8 @@ def test_create_returns_201_id_and_persists(
 ) -> None:
     body = _create(client)
     assert body["recovery_case_id"] == "case-api-offline"
-    assert body["status"] == "WAITING_FOR_RESPONSE"
-    assert body["version"] == 1
+    assert body["status"] == "APPROVAL_REQUIRED"
+    assert body["version"] == 2
     assert body["automatic_spend_limit"] == "30"
     assert body["currency"] == "USD"
     assert repository.get("case-api-offline").case_id == body["recovery_case_id"]
@@ -509,7 +511,7 @@ def test_repository_and_cors_environment_selection(monkeypatch: pytest.MonkeyPat
 def test_end_to_end_offline_http_lifecycle_reaches_resolved(client: TestClient) -> None:
     created = _create(client)
     case_id = created["recovery_case_id"]
-    assert client.get(f"/recoveries/{case_id}").json()["status"] == "WAITING_FOR_RESPONSE"
+    assert client.get(f"/recoveries/{case_id}").json()["status"] == "APPROVAL_REQUIRED"
     pending = _decline(client, case_id).json()
     assert pending["status"] == "APPROVAL_REQUIRED"
     approval_id = pending["pending_approval"]["approval_id"]

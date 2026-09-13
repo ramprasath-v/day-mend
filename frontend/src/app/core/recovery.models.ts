@@ -102,6 +102,9 @@ export interface ExecutionAction {
 }
 
 export interface RecoveryCase {
+  family_policy_snapshot?: import('./family.service').FamilyPolicy | null;
+  family_profile_version?: number | null;
+  notification_mode?: import('./family.service').NotificationMode;
   recovery_case_id: string;
   status: RecoveryStatus;
   original_disruption: {

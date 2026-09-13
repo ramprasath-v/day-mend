@@ -1,4 +1,6 @@
 import { provideHttpClient } from '@angular/common/http';
+import { provideRouter, withHashLocation, withInMemoryScrolling } from '@angular/router';
+import { routes } from './app.routes';
 import {
   ApplicationConfig,
   provideBrowserGlobalErrorListeners,
@@ -10,5 +12,6 @@ export const appConfig: ApplicationConfig = {
     provideBrowserGlobalErrorListeners(),
     provideZoneChangeDetection({ eventCoalescing: true }),
     provideHttpClient(),
+    provideRouter(routes, withHashLocation(), withInMemoryScrolling({ scrollPositionRestoration: 'top' })),
   ],
 };

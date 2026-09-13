@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.dependencies import allowed_origins, build_application_service
+from app.api.family_routes import router as family_router
 from app.api.routes import router
 from app.application import ApplicationError, RecoveryApplicationService
 from app.repositories import (
@@ -25,7 +26,7 @@ def create_app(service: RecoveryApplicationService | None = None) -> FastAPI:
         CORSMiddleware,
         allow_origins=allowed_origins(),
         allow_credentials=True,
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_methods=["GET", "POST", "PUT", "OPTIONS"],
         allow_headers=[
             "Content-Type",
             "Accept",
@@ -83,6 +84,7 @@ def create_app(service: RecoveryApplicationService | None = None) -> FastAPI:
         )
 
     application.include_router(router)
+    application.include_router(family_router)
     return application
 
 

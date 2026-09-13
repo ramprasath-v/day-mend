@@ -29,6 +29,13 @@ def recovery_case_response(recovery_case: RecoveryCase) -> RecoveryCaseResponse:
         approval.plan_id == active_plan_id for approval in recovery_case.approval_history
     )
     return RecoveryCaseResponse(
+        family_policy_snapshot=recovery_case.family_policy,
+        family_profile_version=recovery_case.context_state.get("family_profile_snapshot", {}).get(
+            "version"
+        ),
+        notification_mode=recovery_case.context_state.get("family_profile_snapshot", {}).get(
+            "notification_mode", "meaningful_changes"
+        ),
         recovery_case_id=recovery_case.case_id,
         status=recovery_case.status,
         original_disruption=_original_disruption(recovery_case),

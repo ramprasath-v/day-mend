@@ -1,56 +1,48 @@
-@if (priorPlan() && affected().length) {
-  <section class="card change" aria-labelledby="plan-change-title">
-    <header>
-      <div class="change__icon" aria-hidden="true">↻</div>
-      <div>
-        <p class="eyebrow">What changed</p>
-        <h2 id="plan-change-title">Grandma is no longer available</h2>
-      </div>
-      <p>
-        <strong>{{ preserved().length }} Plan A segments still worked.</strong> Only affected
-        coverage was replanned.
-      </p>
-    </header>
-    <div class="change__grid">
-      <article>
-        <span class="label label--preserved">Preserved · {{ preserved().length }}</span>
-        @for (segment of preserved(); track segment.segment_id) {
-          <div class="segment">
-            <strong>
-              {{ segment.window.start | date: 'h:mm' }}–{{
-                segment.window.end | date: 'h:mm a'
-              }}
-            </strong>
-            <span>{{ segmentLabel(segment) }}</span>
-          </div>
+@if (priorPlan() && recovery().active_plan) {
+<section class="change" aria-labelledby="change-title">
+  <header><p class="eyebrow">What changed · Plan A → Plan B</p><h2 id="change-title">Your day, repaired.</h2>
+    <p>DayMend kept the coverage that still worked and adjusted the affected care and handoffs.</p>
+    <p class="counts">Kept · {{ preserved().length }} <span>Invalidated · {{ affected().length }}</span> Replacement · {{ replacement().length }}</p>
+  </header>
+  <div class="day-spine">
+    @for (group of groups(); track group.start) {
+      @if (group.kept) {
+        @for (segment of group.after; track segment.segment_id) {
+          <article class="kept schedule-segment" data-classification="Kept">
+            <time>{{ segment.window.start | date:'h:mm a' }}–{{ segment.window.end | date:'h:mm a' }}</time>
+            <div><span class="annotation">✓ Kept</span><strong>{{ segmentLabel(segment) }}</strong><p>{{ location(segment) }}</p></div>
+          </article>
         }
-      </article>
-      <article>
-        <span class="label label--affected">Invalidated · {{ affected().length }}</span>
-        @for (segment of affected(); track segment.segment_id) {
-          <div class="segment segment--affected">
-            <strong>
-              {{ segment.window.start | date: 'h:mm' }}–{{
-                segment.window.end | date: 'h:mm a'
-              }}
-            </strong>
-            <span>{{ segmentLabel(segment) }}</span>
-          </div>
-        }
-      </article>
-      <article>
-        <span class="label label--replacement">Replacement · {{ replacement().length }}</span>
-        @for (segment of replacement(); track segment.segment_id) {
-          <div class="segment segment--replacement">
-            <strong>
-              {{ segment.window.start | date: 'h:mm' }}–{{
-                segment.window.end | date: 'h:mm a'
-              }}
-            </strong>
-            <span>{{ segmentLabel(segment) }}</span>
-          </div>
-        }
-      </article>
-    </div>
-  </section>
+      } @else {
+        <div class="repair-interval">
+          <section class="before" aria-label="Before">
+            <h3>Before</h3>
+            @for (segment of group.before; track segment.segment_id) {
+              <article class="changed-segment" [attr.data-classification]="classification(segment)">
+                <span class="annotation">{{ classification(segment) }}</span>
+                <time>{{ segment.window.start | date:'h:mm a' }}–{{ segment.window.end | date:'h:mm a' }}</time>
+                <strong>{{ segmentLabel(segment) }}</strong><p>{{ location(segment) }}</p>
+              </article>
+            } @empty { <p>No previous assignment in this interval.</p> }
+          </section>
+          <section class="now" aria-label="Now">
+            <h3>Now</h3>
+            @for (segment of group.after; track segment.segment_id) {
+              <article class="changed-segment" [attr.data-classification]="afterLabel(segment)">
+                <span class="annotation">{{ afterLabel(segment) }}</span>
+                <time>{{ segment.window.start | date:'h:mm a' }}–{{ segment.window.end | date:'h:mm a' }}</time>
+                <strong>{{ segmentLabel(segment) }}</strong><p>{{ location(segment) }}</p>
+              </article>
+            } @empty { <p>No current assignment recorded in this interval.</p> }
+          </section>
+        </div>
+      }
+    }
+  </div>
+  @if (recovery().active_plan!.calendar_changes.length) {
+    <details><summary>Calendar adjustments · {{ recovery().active_plan!.calendar_changes.length }}</summary>
+      @for (change of recovery().active_plan!.calendar_changes; track change.event_id) { <p>{{ change.title }} · {{ change.window.start | date:'h:mm a' }}–{{ change.window.end | date:'h:mm a' }}</p> }
+    </details>
+  }
+</section>
 }

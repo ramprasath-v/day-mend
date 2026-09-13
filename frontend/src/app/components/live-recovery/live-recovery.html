@@ -1,76 +1,26 @@
-<section class="live" aria-labelledby="live-title" aria-live="polite">
-  <header class="live__header">
-    <div>
-      <p class="eyebrow">Live recovery</p>
-      <h2 id="live-title">
-        @if (busy()) { DayMend is rebuilding today’s plan } @else { How this recovery ran }
-      </h2>
-    </div>
-    <div class="live__signal" [class.live__signal--active]="busy()">
-      <span aria-hidden="true"></span>
-      @if (busy()) { {{ connected() ? 'Live' : 'Connecting' }} · {{ elapsed() }} } @else { Complete }
-    </div>
-  </header>
-
-  <div class="orchestration" aria-label="DayMend recovery stages">
-    @for (node of nodes(); track node.key; let last = $last) {
-      <article
-        class="orchestration__node"
-        [class.orchestration__node--active]="node.status === 'ACTIVE'"
-        [class.orchestration__node--complete]="node.status === 'COMPLETED'"
-        [class.orchestration__node--warning]="node.status === 'WARNING'"
-        [class.orchestration__node--failed]="node.status === 'FAILED'"
-        [class.orchestration__node--branch]="node.branch"
-      >
-        <div class="orchestration__topline">
-          <span class="role" [attr.data-role]="node.role">{{ actorLabel(node.role) }}</span>
-          <span class="state">{{ node.status }}</span>
-        </div>
-        <strong>{{ node.label }}</strong>
-        <small>{{ node.detail }}</small>
-      </article>
-      @if (!last) { <span class="connector" aria-hidden="true">→</span> }
-    }
-  </div>
-
-  <div class="live__body">
-    <div class="live__summary">
-      <p class="live__label">Happening now</p>
-      @if (events().at(-1); as current) {
-        <strong>{{ current.summary }}</strong>
-        <span>{{ stageLabel(current.stage) }} · {{ actorLabel(current.actor_type) }}</span>
-      } @else {
-        <strong>Waiting for the recovery request</strong>
-        <span>Progress appears here as the real workflow advances.</span>
-      }
-      @if (lastCompleted(); as completed) {
-        <p class="last-completed"><i aria-hidden="true">✓</i> Last completed: {{ completed.summary }}</p>
-      }
-    </div>
-
-    <ol class="event-feed" aria-label="Ordered recovery progress events">
-      @for (event of recentEvents(); track event.id) {
-        <li [attr.data-status]="event.status">
-          <span class="event-feed__marker" aria-hidden="true"></span>
-          <div>
-            <div class="event-feed__meta">
-              <span>{{ stageLabel(event.stage) }}</span>
-              <span>{{ actorLabel(event.actor_type) }}</span>
-            </div>
-            <strong>{{ event.summary }}</strong>
-            @if (detailItems(event).length) {
-              <div class="event-feed__details">
-                @for (item of detailItems(event); track item) { <span>{{ item }}</span> }
-              </div>
-            }
-          </div>
-        </li>
-      } @empty {
-        <li class="event-feed__empty">
-          <span class="event-feed__marker" aria-hidden="true"></span>
-          <div><strong>Connecting to DayMend</strong><span>Waiting for the first structured event.</span></div>
-        </li>
-      }
+<section class="journal">
+  @if (showStatusSummary()) {
+  <p class="current" role="status">{{ status() }}
+    @if (busy()) { <span> · {{ elapsedSeconds() }}s</span> }
+  </p>
+  }
+  @if (busy() && showActivitySummary()) {
+    @if (events().at(-1); as event) { <p>{{ event.summary }}</p> }
+    @else { <p>Waiting for the first recovery update.</p> }
+    @if (!connected()) { <p class="muted">Progress connection reconnecting. The request may still be running.</p> }
+  }
+  <details>
+    <summary>How DayMend handled this</summary>
+    <ol>
+      @for (event of journal(); track event.id) {
+        <li><time>{{ event.timestamp | date:'mediumTime' }}</time><div><strong>{{ event.summary }}</strong>
+          <small>{{ event.actor_name.replaceAll('_', ' ') }}</small>
+          @if (event.details.attempt_number) { <span>Attempt {{ event.details.attempt_number }}</span> }
+          @if (event.details.issue_count !== undefined) { <span>{{ event.details.issue_count }} validation issues</span> }
+          @if (event.details.issue_codes?.length) { <span>{{ event.details.issue_codes?.join(', ') }}</span> }
+        </div></li>
+      } @empty { <li>No live progress events are available. Recorded case history remains available in History.</li> }
     </ol>
-  </div>
+    <p class="muted">AgentCore · 3 Strands agents · Claude Sonnet 4.5. Agents propose; application services validate, gate approval, execute and verify completion.</p>
+  </details>
 </section>

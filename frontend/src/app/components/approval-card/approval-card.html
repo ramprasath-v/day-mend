@@ -1,47 +1,19 @@
 @if (recovery().pending_approval; as approval) {
-  <section class="approval" aria-labelledby="approval-title">
-    <div class="approval__mark" aria-hidden="true">!</div>
-    <div>
-      <p class="eyebrow">Meaningful decision</p>
-      <h2 id="approval-title">Your approval is needed</h2>
-      <p>{{ approval.summary }}</p>
-      <div class="approval__numbers">
-        <div>
-          <span>Recovery cost</span
-          ><strong>{{
-            money(approval.amount) | currency: approval.currency ?? 'USD' : 'symbol' : '1.0-0'
-          }}</strong>
-        </div>
-        <div>
-          <span>Automatic-spend limit</span
-          ><strong>{{
-            money(recovery().automatic_spend_limit)
-              | currency: recovery().currency ?? 'USD' : 'symbol' : '1.0-0'
-          }}</strong>
-        </div>
-      </div>
-      <div class="approval__why">
-        <strong>Why you’re being asked</strong><span>{{ approval.reason }}</span>
-      </div>
-      <div class="approval__actions">
-        <button
-          class="button button--primary"
-          type="button"
-          [disabled]="busy()"
-          (click)="approve.emit()"
-        >
-          Approve
-          {{ money(approval.amount) | currency: approval.currency ?? 'USD' : 'symbol' : '1.0-0' }}
-        </button>
-        <button
-          class="button button--quiet"
-          type="button"
-          [disabled]="busy()"
-          (click)="reject.emit()"
-        >
-          Reject
-        </button>
-      </div>
-    </div>
-  </section>
+<section class="approval" aria-labelledby="approval-title">
+  <p class="eyebrow">Your decision</p><h2 id="approval-title">One decision needs you.</h2>
+  @for (segment of paidCare(); track segment.segment_id) {
+    <p class="provider"><strong>{{ friendlyPerson(segment.assigned_person_id) }}</strong><br>
+      <time>{{ segment.window.start | date:'h:mm a' }}–{{ segment.window.end | date:'h:mm a' }}</time><br>{{ segment.location_label ?? (segment.location_id ? friendlyPerson(segment.location_id) : '') }}</p>
+  }
+  <p class="amount money">{{ money(approval.amount) | currency: approval.currency ?? recovery().currency ?? 'USD':'symbol':'1.2-2' }}</p>
+  @if (recovery().automatic_spend_limit !== null && money(approval.amount) > money(recovery().automatic_spend_limit)) {
+    <p>Above your {{ money(recovery().automatic_spend_limit) | currency: recovery().currency ?? 'USD':'symbol':'1.0-2' }} automatic-spend limit.</p>
+  }
+  <p>{{ approval.reason }}</p>
+  <p class="muted">The proposed coverage has been checked. Your approval is needed before the recovery actions run.</p>
+  <div class="approval__actions">
+    <button class="button button--primary" type="button" [disabled]="busy()" (click)="approve.emit()">Approve {{ money(approval.amount) | currency: approval.currency ?? recovery().currency ?? 'USD':'symbol':'1.2-2' }}</button>
+    <button class="button button--quiet" type="button" [disabled]="busy()" (click)="reject.emit()">Reject</button>
+  </div>
+</section>
 }

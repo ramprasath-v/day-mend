@@ -475,7 +475,8 @@ def test_transport_retry_is_internal_to_one_recovery_lifecycle() -> None:
         )
 
     events = progress_buffer.snapshot("progress-agentcore-retry")
-    assert repository.save_count == 1
+    # One case is saved, then its paid Plan A gets a versioned approval gate.
+    assert repository.save_count == 2
     assert repository.get(recovered.case_id).case_id == recovered.case_id
     assert [event.event_type for event in events].count("RECOVERY_STARTED") == 1
     assert [event.event_type for event in events].count("AGENTCORE_TRANSPORT_RETRY") == 1

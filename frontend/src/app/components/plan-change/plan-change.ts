@@ -29,6 +29,50 @@ export class PlanChangeComponent {
     );
   });
   readonly friendlyPerson = friendlyPerson;
+  readonly groups = computed(() => {
+    const before = this.priorPlan()?.coverage_segments ?? [];
+    const after = this.recovery().active_plan?.coverage_segments ?? [];
+    const entries = [...before.map(segment => ({ segment, side: 'before' as const })), ...after.map(segment => ({ segment, side: 'after' as const }))]
+      .sort((a, b) => Date.parse(a.segment.window.start) - Date.parse(b.segment.window.start));
+    const groups: { start: number; end: number; before: CoverageSegment[]; after: CoverageSegment[]; kept: boolean }[] = [];
+    for (const entry of entries) {
+      const start = Date.parse(entry.segment.window.start);
+      const end = Date.parse(entry.segment.window.end);
+      let group = groups.at(-1);
+      if (!group || start >= group.end) {
+        group = { start, end, before: [], after: [], kept: false };
+        groups.push(group);
+      }
+      group.end = Math.max(group.end, end);
+      group[entry.side].push(entry.segment);
+    }
+    return groups.map(group => ({ ...group, kept: group.before.length === 1 && group.after.length === 1 && this.segmentsMateriallyMatch(group.before[0], group.after[0]) }));
+  });
+
+  classification(segment: CoverageSegment): string {
+    if (this.affected().includes(segment)) return 'Unavailable';
+    const active = this.recovery().active_plan;
+    if (segment.segment_type !== 'TRANSPORT' || active?.validation_state !== 'VALID') return 'Changed';
+    const overlapping = active.coverage_segments.filter(other => Date.parse(other.window.start) < Date.parse(segment.window.end) && Date.parse(other.window.end) > Date.parse(segment.window.start))
+      .sort((a, b) => Date.parse(a.window.start) - Date.parse(b.window.start));
+    let coveredUntil = Date.parse(segment.window.start);
+    for (const other of overlapping) {
+      if (other.segment_type === 'TRANSPORT' || Date.parse(other.window.start) > coveredUntil) return 'Changed';
+      coveredUntil = Math.max(coveredUntil, Date.parse(other.window.end));
+    }
+    return coveredUntil >= Date.parse(segment.window.end) ? 'Transport no longer needed' : 'Changed';
+  }
+
+  afterLabel(segment: CoverageSegment): string {
+    if (this.replacement().includes(segment)) return 'Replacement';
+    return this.priorPlan()?.coverage_segments.some(prior => this.segmentsMateriallyMatch(prior, segment)) ? 'Kept' : 'Updated';
+  }
+
+  location(segment: CoverageSegment): string {
+    const origin = segment.location_label ?? (segment.location_id ? friendlyPerson(segment.location_id) : '');
+    const destination = segment.destination_location_label ?? (segment.destination_location_id ? friendlyPerson(segment.destination_location_id) : null);
+    return segment.segment_type === 'TRANSPORT' && destination ? origin + ' → ' + destination : origin;
+  }
 
   segmentLabel(segment: CoverageSegment): string {
     return segment.segment_type === 'TRANSPORT'

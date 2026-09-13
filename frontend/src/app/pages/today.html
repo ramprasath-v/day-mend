@@ -1,0 +1,36 @@
+<app-recovery-hero [recovery]="store.currentCase()" [busy]="store.loading()" (resetDemo)="store.resetDemo()" />
+@if (store.error(); as error) {
+  <div class="error-banner" role="alert"><p>{{ error }}</p><button class="button button--secondary" (click)="store.refresh()" [disabled]="store.loading()">Try refresh</button></div>
+}
+@if (!store.loading()) {
+  <app-demo-controls [recovery]="store.currentCase()" [busy]="store.loading()" (start)="store.startRecovery()" (decline)="store.submitGrandmaDecline()" />
+}
+@if (store.currentCase(); as recovery) {
+  @if (recovery.approval_history.at(-1)?.status === 'REJECTED') {
+    <section class="open-section"><h2>Recovery not approved</h2><p>No recovery actions were taken. This case remains open; no alternative has been confirmed.</p></section>
+  }
+  <div class="day-layout" [class.has-decision]="!!recovery.pending_approval">
+    <div class="day-schedule">
+      @if (recovery.active_plan; as plan) {
+        @if (recovery.previous_plans.length) {
+          <app-plan-change [recovery]="recovery" />
+        } @else {
+          <app-coverage-plan [plan]="plan" badge="Recovery Plan A" [currency]="recovery.currency ?? 'USD'" />
+        }
+        @if (recovery.timestamps.completion_verified_at) {
+          <p class="verification">✓ Coverage verified · {{ recovery.timestamps.completion_verified_at | date:'medium' }}</p>
+        }
+      }
+    </div>
+    @if (recovery.pending_approval) {
+      <app-approval-card [recovery]="recovery" [busy]="store.loading()" (approve)="store.decideApproval('APPROVE')" (reject)="store.decideApproval('REJECT')" />
+    }
+  </div>
+} @else if (!store.loading()) {
+  <section class="normal-day"><p class="eyebrow">Demo day · scheduled care</p><h2>One continuous care window</h2>
+    <div class="normal-span"><time>8:00 AM–4:00 PM</time><strong>Nanny</strong><span>Scheduled childcare</span></div>
+  </section>
+}
+@if (store.currentCase() || store.loading() || store.error()) {
+  <app-live-recovery [events]="store.progressEvents()" [recovery]="store.currentCase()" [busy]="store.loading()" [connected]="store.progressConnected()" [elapsedSeconds]="store.elapsedSeconds()" [action]="store.actionInProgress()" [error]="store.error()" [pendingNotificationMode]="pendingNotificationMode()" />
+}

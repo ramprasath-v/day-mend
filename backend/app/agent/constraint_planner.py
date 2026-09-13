@@ -232,6 +232,7 @@ def _build_feasible_assignment_matrix(
         caregiver
         for caregiver in caregivers
         if caregiver["caregiver_id"] not in unavailable
+        and (not caregiver["external_provider"] or policy["allow_external_backup_providers"])
         and (
             caregiver["is_trusted"]
             or (not policy["require_trusted_caregiver"] and policy["unapproved_caregiver_allowed"])
@@ -255,7 +256,9 @@ def _build_feasible_assignment_matrix(
         if not care_windows:
             continue
         feasible_caregivers.append(caregiver)
-        if caregiver["can_transport_child"]:
+        if caregiver["can_transport_child"] and (
+            not caregiver["external_provider"] or policy["allow_provider_transport"]
+        ):
             transporter_windows[caregiver["caregiver_id"]] = care_windows
         people.append(
             FeasiblePersonAssignment(

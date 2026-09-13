@@ -10,11 +10,13 @@ from app.agent.runtime_gateway import (
     runtime_mode_from_environment,
 )
 from app.application import RecoveryApplicationService, StrandsRecoveryPlanningGateway
+from app.application.family_service import FamilyService
 from app.repositories import (
     DynamoDBRecoveryCaseRepository,
     InMemoryRecoveryCaseRepository,
     RecoveryCaseRepository,
 )
+from app.repositories.family_repository import DynamoDBFamilyRepository, InMemoryFamilyRepository
 
 
 def build_recovery_repository() -> RecoveryCaseRepository:
@@ -37,6 +39,11 @@ def build_application_service() -> RecoveryApplicationService:
     return RecoveryApplicationService(
         build_recovery_repository(),
         planning_gateway,
+        family_service=FamilyService(
+            DynamoDBFamilyRepository()
+            if os.getenv("DAYMEND_RECOVERY_REPOSITORY", "memory").strip().lower() == "dynamodb"
+            else InMemoryFamilyRepository()
+        ),
     )
 
 

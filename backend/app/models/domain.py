@@ -170,6 +170,9 @@ class FamilyPreferences(ContractModel):
     """Soft priorities that help the agent rank otherwise valid plans."""
 
     prefer_family_first: bool = False
+    prefer_trusted_caregivers: bool = False
+    prefer_in_home_care: bool = False
+    protect_critical_meetings: bool = False
     prefer_fewer_handoffs: bool = False
     prefer_parent_a_morning_coverage: bool = False
     avoid_rescheduling_customer_meetings: bool = False
@@ -200,6 +203,8 @@ class FamilyPolicy(ContractModel):
     require_verified_backup_provider: bool = False
     require_background_checked_backup_provider: bool = False
     require_approval_for_unfamiliar_paid_caregiver: bool = False
+    allow_external_backup_providers: bool = True
+    allow_provider_transport: bool = True
 
 
 class CoverageSource(StrEnum):

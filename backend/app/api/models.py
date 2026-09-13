@@ -18,6 +18,8 @@ from app.models import (
     RecoveryEventType,
     RecoveryStatus,
 )
+from app.models.domain import FamilyPolicy
+from app.models.family import NotificationMode
 
 
 class ApiModel(BaseModel):
@@ -164,6 +166,9 @@ class RecoveryTimestampsResponse(ApiModel):
 
 
 class RecoveryCaseResponse(ApiModel):
+    family_policy_snapshot: FamilyPolicy | None = None
+    family_profile_version: int | None = None
+    notification_mode: NotificationMode = NotificationMode.MEANINGFUL_CHANGES
     recovery_case_id: str
     status: RecoveryStatus
     original_disruption: DisruptionResponse
