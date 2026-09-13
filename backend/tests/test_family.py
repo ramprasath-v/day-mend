@@ -1,6 +1,7 @@
 """Offline family edits, policy enforcement and snapshot isolation."""
 
 from dataclasses import replace
+from datetime import timedelta
 from decimal import Decimal
 
 import pytest
@@ -168,6 +169,49 @@ def test_profile_facts_change_care_and_transport_primitives():
     assert all(p.transporter_id != caregiver["caregiver_id"] for p in result.transport_primitives)
     person = next(p for p in result.people if p.person_id == caregiver["caregiver_id"])
     assert person.permitted_care_windows[0].start == at(10)
+
+
+def test_connected_need_detects_missing_caregiver_transport_despite_time_coverage():
+    scenario = get_demo_scenario()
+    scenario = replace(
+        scenario,
+        caregivers=(
+            scenario.caregivers[0].model_copy(update={"can_transport_child": False}),
+            *scenario.caregivers[1:],
+        ),
+    )
+
+    need = assess_known_option_recovery_need(scenario)
+
+    assert need.known_options_insufficient
+    assert need.research_needed
+    assert need.requested_windows == [
+        type(scenario.required_coverage)(
+            start=at(8, 45),
+            end=at(12, 15),
+        )
+    ]
+    assert not matrix(scenario).care_primitives
+    assert not matrix(scenario).transport_primitives
+
+
+def test_shortened_required_care_uses_connected_path_only_through_new_end():
+    scenario = get_demo_scenario()
+    shortened = replace(
+        scenario,
+        required_coverage=scenario.required_coverage.model_copy(
+            update={"end": scenario.required_coverage.end - timedelta(hours=2)}
+        ),
+    )
+
+    need = assess_known_option_recovery_need(shortened)
+    result = matrix(shortened)
+
+    assert not need.known_options_insufficient
+    assert need.requested_windows == []
+    assert result.required_coverage_window.end == at(14)
+    assert any(item.window.end == at(14) for item in result.care_primitives)
+    assert all(item.window.end <= at(14) for item in result.care_primitives)
 
 
 def test_untrusted_edit_obeys_existing_hard_rule():

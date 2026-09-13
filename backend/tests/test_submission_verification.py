@@ -1,6 +1,7 @@
 """Controlled offline verification: only model proposals are fixtures, never live inference."""
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -15,10 +16,14 @@ from app.agent.recovery_agent import ToolInvocationRecorder
 from app.agent.recovery_orchestrator import ConstraintCategory, PlanningBrief, PlanningMode
 from app.agent.research_multi_agent import run_research_multi_agent_initial_planning
 from app.application import RecoveryApplicationService
+from app.application.family_service import FamilyService
+from app.fixtures import get_demo_scenario
 from app.main import create_app
+from app.models import CareLocationType
 from app.models.family import FamilyUpdate
 from app.repositories import InMemoryRecoveryCaseRepository
-from app.services import PlanValidator
+from app.repositories.family_repository import InMemoryFamilyRepository
+from app.services import PlanValidator, assess_known_option_recovery_need
 from tests.milestone2_helpers import at, minute_window, showcase_plan_a
 from tests.test_family import family_edit, matrix, policy_edit
 from tests.test_location_transport import plan_b
@@ -33,6 +38,7 @@ class FixtureGateway:
 
     def agents(self, scenario, replan=False):
         recorder = ToolInvocationRecorder(allowed_tool_names={"search_backup_care"})
+        research_needed = assess_known_option_recovery_need(scenario).research_needed
 
         class Orchestrator:
             def __call__(self, prompt, *, structured_output_model=None):
@@ -45,6 +51,7 @@ class FixtureGateway:
                         objective="Restore coverage.",
                         required_coverage_window=scenario.required_coverage,
                         relevant_constraint_categories=list(ConstraintCategory),
+                        backup_research_needed=research_needed,
                     )
                 )
 
@@ -85,7 +92,7 @@ class FixtureGateway:
                     )
                 return SimpleNamespace(
                     structured_output=(
-                        (plan_b()[0] if replan else showcase_plan_a())
+                        (plan_b()[0] if replan or research_needed else showcase_plan_a())
                         if structured_output_model
                         else None
                     )
@@ -282,7 +289,7 @@ def test_external_disabled_is_unresolved_without_research_or_provider_acceptance
     )
 
 
-def test_transport_disabled_rejects_invalid_proposal_without_removing_care():
+def test_transport_disabled_researches_connected_external_replacement():
     service, gateway, client = harness()
     family = service.family_service
     original = family.get()
@@ -298,8 +305,19 @@ def test_transport_disabled_rejects_invalid_proposal_without_removing_care():
         issue.code for issue in PlanValidator().validate(showcase_plan_a(), scenario).issues
     }
     response = start(client)
-    assert response.status_code == 409
-    assert not gateway.results[-1].success
+    assert response.status_code == 201
+    assert gateway.results[-1].success
+    assert gateway.results[-1].total_attempts == 1
+    assert gateway.results[-1].research_agent_invocation_count == 1
+    body = response.json()
+    assert body["active_plan"]["validation_state"] == "VALID"
+    assert all(
+        segment["segment_type"] == "CARE" for segment in body["active_plan"]["coverage_segments"]
+    )
+    assert any(
+        segment["assigned_person_id"] == "harbor_nanny_coop"
+        for segment in body["active_plan"]["coverage_segments"]
+    )
     restore = family_edit(original)
     restore["expected_version"] = family.get().version
     family.update(FamilyUpdate.model_validate(restore))
@@ -311,9 +329,134 @@ def test_transport_disabled_rejects_invalid_proposal_without_removing_care():
                 "attempts": gateway.results[-1].total_attempts,
                 "care_eligible": True,
                 "transport_primitive_present": False,
+                "research_calls": gateway.results[-1].research_agent_invocation_count,
             }
         )
     )
+
+
+def test_transport_disabled_and_external_disabled_stops_before_planner():
+    service, gateway, client = harness()
+    family = service.family_service
+    profile = family.update_policy(policy_edit(family.get(), external=False))
+    edit = family_edit(profile)
+    edit["caregivers"][0]["can_transport_child"] = False
+    family.update(FamilyUpdate.model_validate(edit))
+
+    response = start(client)
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "NO_RECOVERY_OPTION"
+    assert body["events"][-1]["details"]["reason_code"] == "EXTERNAL_BACKUP_DISABLED"
+    assert gateway.results == []
+
+
+def test_untrusted_required_sitter_returns_clean_no_option_before_planner():
+    service, gateway, client = harness()
+    family = service.family_service
+    edit = family_edit(family.get())
+    edit["caregivers"][1]["is_trusted"] = False
+    family.update(FamilyUpdate.model_validate(edit))
+
+    response = start(client)
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "NO_RECOVERY_OPTION"
+    assert body["events"][-1]["details"]["reason_code"] == "NO_PLANABLE_BACKUP_CARE"
+    assert body["events"][-1]["details"]["uncovered_windows"] == [
+        minute_window(14, 0, 15).model_dump(mode="json")
+    ]
+    assert gateway.results == []
+
+
+def test_disconnected_caregiver_location_is_not_treated_as_sufficient_time_coverage():
+    service, gateway, client = harness()
+    family = service.family_service
+    edit = family_edit(family.get())
+    edit["caregivers"][1]["location_id"] = "grandma_home"
+    family.update(FamilyUpdate.model_validate(edit))
+
+    response = start(client)
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "NO_RECOVERY_OPTION"
+    assert gateway.results == []
+
+
+def _all_offsite_provider_service():
+    def scenario_factory(care_date=None):
+        scenario = get_demo_scenario(care_date)
+        return replace(
+            scenario,
+            caregivers=(
+                scenario.caregivers[0].model_copy(update={"can_transport_child": False}),
+                *scenario.caregivers[1:],
+            ),
+            policy=scenario.policy.model_copy(update={"allow_provider_transport": False}),
+            backup_care_candidates=tuple(
+                candidate.model_copy(
+                    update={
+                        "care_location_type": CareLocationType.CAREGIVER_HOME,
+                        "location_id": f"{candidate.candidate_id}_home",
+                        "location_label": f"{candidate.display_name} home",
+                        "travel_minutes_from_family_home": 15,
+                        "can_transport_child": True,
+                    }
+                )
+                for candidate in scenario.backup_care_candidates
+            ),
+        )
+
+    gateway = FixtureGateway()
+    family = FamilyService(InMemoryFamilyRepository(), scenario_factory)
+    service = RecoveryApplicationService(
+        InMemoryRecoveryCaseRepository(),
+        gateway,
+        scenario_factory=lambda: scenario_factory(),
+        family_service=family,
+        id_factory=lambda: "offsite-provider-case",
+    )
+    return gateway, TestClient(create_app(service))
+
+
+def test_provider_transport_disabled_exhaustion_returns_no_option_without_planner():
+    gateway, client = _all_offsite_provider_service()
+
+    response = start(client)
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "NO_RECOVERY_OPTION"
+    assert response.json()["events"][-1]["details"]["reason_code"] == ("NO_PLANABLE_BACKUP_CARE")
+    assert gateway.results == []
+
+
+def test_replanning_research_exhaustion_preserves_plan_and_skips_planner():
+    def scenario_factory(care_date=None):
+        return replace(get_demo_scenario(care_date), backup_care_candidates=())
+
+    gateway = FixtureGateway()
+    family = FamilyService(InMemoryFamilyRepository(), scenario_factory)
+    service = RecoveryApplicationService(
+        InMemoryRecoveryCaseRepository(),
+        gateway,
+        scenario_factory=lambda: scenario_factory(),
+        family_service=family,
+        id_factory=iter(f"research-exhaustion-{index}" for index in range(10)).__next__,
+    )
+    client = TestClient(create_app(service))
+    created = start(client)
+    assert created.status_code == 201
+
+    response = decline(client, created.json())
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "NO_RECOVERY_OPTION"
+    assert body["events"][-1]["details"]["reason_code"] == "NO_PLANABLE_BACKUP_CARE"
+    assert len(body["events"][-1]["details"]["preserved_segment_ids"]) == 2
+    assert gateway.replan_calls == 0
 
 
 def preview_app():

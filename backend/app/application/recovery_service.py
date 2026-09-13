@@ -8,7 +8,6 @@ from typing import Protocol
 from uuid import uuid4
 
 from app.agent.config import AgentArchitecture, RecoveryAgentConfig
-from app.agent.constraint_planner import build_feasible_assignment_matrix
 from app.agent.multi_agent import (
     run_multi_agent_initial_planning,
     run_multi_agent_replanning,
@@ -22,6 +21,7 @@ from app.agent.recovery_agent import (
 from app.agent.recovery_orchestrator import PlanningBrief
 from app.agent.replanning import ReplanningResult, process_external_event
 from app.agent.research_multi_agent import run_research_multi_agent_initial_planning
+from app.agent.research_planability import planable_research_candidate_ids
 from app.application.family_service import FamilyService
 from app.fixtures import DemoScenario, get_demo_scenario
 from app.models import (
@@ -45,6 +45,7 @@ from app.services import (
     WorkflowInvariantError,
     add_researched_caregiver,
     apply_caregiver_decline_to_scenario,
+    assess_known_option_recovery_need,
     create_active_recovery_case,
     materialize_caregiver_assumptions,
 )
@@ -315,6 +316,23 @@ class RecoveryApplicationService:
         case_id = self._id_factory()
         log_event("recovery_started", recovery_case_id=case_id)
         log_event("planning_started", recovery_case_id=case_id, phase="initial_planning")
+        recovery_need = assess_known_option_recovery_need(scenario)
+        if recovery_need.known_options_insufficient and (
+            not scenario.policy.allow_external_backup_providers
+            or not planable_research_candidate_ids(
+                scenario=scenario,
+                recovery_need=recovery_need,
+            )
+        ):
+            return self._persist_initial_no_option(
+                command=command,
+                case_id=case_id,
+                disruption=disruption,
+                profile_snapshot=profile_snapshot,
+                scenario_snapshot=scenario_snapshot,
+                scenario=scenario,
+                uncovered_windows=recovery_need.requested_windows,
+            )
         started = perf_counter()
         try:
             planning = self._planning.plan_initial(disruption, scenario)
@@ -430,6 +448,94 @@ class RecoveryApplicationService:
             return gate.recovery_case
         return self._execute_and_complete(case_id)
 
+    def _persist_initial_no_option(
+        self,
+        *,
+        command: StartRecoveryCommand,
+        case_id: str,
+        disruption: str,
+        profile_snapshot: dict,
+        scenario_snapshot: dict,
+        scenario: DemoScenario,
+        uncovered_windows: list[CoverageWindow],
+    ) -> RecoveryCase:
+        """Persist a safe initial outcome when no connected known or researched path exists."""
+
+        windows = [window.model_dump(mode="json") for window in uncovered_windows]
+        window_labels = [
+            f"{window.start.isoformat()}/{window.end.isoformat()}" for window in uncovered_windows
+        ]
+        external_disabled = not scenario.policy.allow_external_backup_providers
+        log_event(
+            "known_options_exhausted",
+            recovery_case_id=case_id,
+            phase="initial_planning",
+            affected_windows=window_labels,
+            preserved_count=0,
+        )
+        if not external_disabled:
+            log_event(
+                "research_candidates_exhausted",
+                recovery_case_id=case_id,
+                phase="initial_planning",
+                affected_windows=window_labels,
+            )
+        log_event(
+            "no_recovery_option",
+            recovery_case_id=case_id,
+            phase="initial_planning",
+            affected_windows=window_labels,
+            preserved_count=0,
+        )
+        now = self._clock()
+        event = RecoveryEvent(
+            event_id=f"disruption:{case_id}",
+            event_type=RecoveryEventType.DISRUPTION_DETECTED,
+            occurred_at=command.occurred_at,
+            caregiver_id=command.caregiver_id,
+            message=command.message,
+            details={
+                "disruption_type": command.disruption_type,
+                "outcome_code": "NO_RECOVERY_OPTION",
+                "reason_code": (
+                    "EXTERNAL_BACKUP_DISABLED" if external_disabled else "NO_PLANABLE_BACKUP_CARE"
+                ),
+                "message": "No recovery option is available with your current settings.",
+                "supporting_text": (
+                    "Known caregivers cannot cover the remaining gap, and external backup care "
+                    "is turned off."
+                    if external_disabled
+                    else (
+                        "Known caregivers and eligible backup care cannot form a complete safe day."
+                    )
+                ),
+                "uncovered_windows": windows,
+                "preserved_segment_ids": [],
+            },
+        )
+        recovery_case = RecoveryCase(
+            case_id=case_id,
+            status=RecoveryStatus.NO_RECOVERY_OPTION,
+            disruption=disruption,
+            coverage_gap=scenario.required_coverage,
+            uncovered_windows=uncovered_windows,
+            context_state={
+                "family_profile_snapshot": profile_snapshot,
+                "scenario_snapshot": scenario_snapshot,
+                "original_disruption": {
+                    "disruption_type": command.disruption_type,
+                    "occurred_at": command.occurred_at.isoformat(),
+                    "caregiver_id": command.caregiver_id,
+                    "message": command.message,
+                },
+            },
+            family_policy=scenario.policy,
+            events=[event],
+            created_at=now,
+            updated_at=now,
+        )
+        return self.repository.save(recovery_case)
+
     def get_recovery(self, case_id: str) -> RecoveryCase:
         return self.repository.get(case_id)
 
@@ -454,14 +560,14 @@ class RecoveryApplicationService:
             occurred_at=command.occurred_at,
             message=command.message,
         )
-        no_option = self._stop_when_external_backup_is_disabled(
-            recovery_case,
-            event,
-            scenario,
-        )
-        if no_option is not None:
-            return no_option
         try:
+            no_option = self._stop_when_no_recovery_option(
+                recovery_case,
+                event,
+                scenario,
+            )
+            if no_option is not None:
+                return no_option
             result = self._planning.replan(recovery_case, event, scenario)
         except ValueError as exc:
             log_event(
@@ -560,7 +666,7 @@ class RecoveryApplicationService:
             return gate.recovery_case
         return self._execute_and_complete(gate.recovery_case.case_id)
 
-    def _stop_when_external_backup_is_disabled(
+    def _stop_when_no_recovery_option(
         self,
         recovery_case: RecoveryCase,
         event: RecoveryEvent,
@@ -568,15 +674,20 @@ class RecoveryApplicationService:
     ) -> RecoveryCase | None:
         """Persist an unresolved deterministic outcome before impossible model work."""
 
-        if scenario.policy.allow_external_backup_providers:
-            return None
         outcome = self._invalidation.apply_caregiver_decline(recovery_case, event, scenario)
-        matrix = build_feasible_assignment_matrix(
+        need = assess_known_option_recovery_need(
             outcome.updated_scenario,
             affected_windows=list(outcome.uncovered_windows),
             preserved_segments=list(outcome.preserved_segments),
         )
-        if matrix.care_primitives or matrix.transport_primitives:
+        if not need.known_options_insufficient:
+            return None
+        if scenario.policy.allow_external_backup_providers and planable_research_candidate_ids(
+            scenario=outcome.updated_scenario,
+            recovery_need=need,
+            affected_windows=list(outcome.uncovered_windows),
+            preserved_segments=list(outcome.preserved_segments),
+        ):
             return None
 
         for _assumption in outcome.invalidated_assumptions:
@@ -586,10 +697,10 @@ class RecoveryApplicationService:
                 plan_id=recovery_case.active_recovery_plan.plan_id,
                 invalidated_count=1,
             )
-        windows = [window.model_dump(mode="json") for window in outcome.uncovered_windows]
+        windows = [window.model_dump(mode="json") for window in need.requested_windows]
         window_labels = [
             f"{window.start.isoformat()}/{window.end.isoformat()}"
-            for window in outcome.uncovered_windows
+            for window in need.requested_windows
         ]
         preserved_ids = [segment.segment_id for segment in outcome.preserved_segments]
         log_event(
@@ -599,6 +710,13 @@ class RecoveryApplicationService:
             affected_windows=window_labels,
             preserved_count=len(preserved_ids),
         )
+        if scenario.policy.allow_external_backup_providers:
+            log_event(
+                "research_candidates_exhausted",
+                recovery_case_id=recovery_case.case_id,
+                phase="replanning",
+                affected_windows=window_labels,
+            )
         log_event(
             "no_recovery_option",
             recovery_case_id=recovery_case.case_id,
@@ -610,11 +728,17 @@ class RecoveryApplicationService:
         details = {
             **outcome.recovery_case.events[-1].details,
             "outcome_code": "NO_RECOVERY_OPTION",
-            "reason_code": "EXTERNAL_BACKUP_DISABLED",
+            "reason_code": (
+                "EXTERNAL_BACKUP_DISABLED"
+                if not scenario.policy.allow_external_backup_providers
+                else "NO_PLANABLE_BACKUP_CARE"
+            ),
             "message": "No recovery option is available with your current settings.",
             "supporting_text": (
                 "Known caregivers cannot cover the remaining gap, and external backup care "
                 "is turned off."
+                if not scenario.policy.allow_external_backup_providers
+                else "Known caregivers and eligible backup care cannot form a complete safe day."
             ),
             "uncovered_windows": windows,
             "preserved_segment_ids": preserved_ids,

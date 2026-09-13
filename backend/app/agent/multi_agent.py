@@ -155,7 +155,11 @@ def run_multi_agent_replanning(
     research_run = None
     researched_candidate = None
     if config.architecture is AgentArchitecture.MULTI_RESEARCH:
-        need = assess_known_option_recovery_need(outcome.updated_scenario)
+        need = assess_known_option_recovery_need(
+            outcome.updated_scenario,
+            affected_windows=list(outcome.uncovered_windows),
+            preserved_segments=list(outcome.preserved_segments),
+        )
         if need.research_needed:
             researcher_recorder = researcher_recorder or ToolInvocationRecorder(
                 allowed_tool_names={"search_backup_care"}

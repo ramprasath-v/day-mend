@@ -133,7 +133,11 @@ def execute_runtime_request(
             )
             brief = orchestration.brief
             if request.architecture == "multi_research":
-                need = assess_known_option_recovery_need(scenario)
+                need = assess_known_option_recovery_need(
+                    scenario,
+                    affected_windows=list(outcome.uncovered_windows),
+                    preserved_segments=list(outcome.preserved_segments),
+                )
                 if need.research_needed:
                     research_recorder = ToolInvocationRecorder(
                         allowed_tool_names={"search_backup_care"}

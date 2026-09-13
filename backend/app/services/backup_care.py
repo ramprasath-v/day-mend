@@ -5,7 +5,13 @@ from enum import StrEnum
 from pydantic import Field
 
 from app.fixtures import DemoScenario
-from app.models import BackupCareCandidate, Caregiver, ContractModel, CoverageWindow
+from app.models import (
+    BackupCareCandidate,
+    Caregiver,
+    ContractModel,
+    CoverageWindow,
+    RecoveryPlanSegment,
+)
 
 
 class BackupCareIneligibilityCode(StrEnum):
@@ -43,41 +49,36 @@ class BackupCareSearchResult(ContractModel):
     eligible_candidates: list[BackupCareCandidate]
 
 
-def assess_known_option_recovery_need(scenario: DemoScenario) -> RecoveryNeed:
-    """Find required intervals no currently known caregiver or available parent can cover."""
+def assess_known_option_recovery_need(
+    scenario: DemoScenario,
+    *,
+    affected_windows: list[CoverageWindow] | None = None,
+    preserved_segments: list[RecoveryPlanSegment] | None = None,
+) -> RecoveryNeed:
+    """Use the Planner's connected matrix as the sole known-option sufficiency decision."""
 
-    required = scenario.required_coverage
-    available: list[CoverageWindow] = []
-    for caregiver in scenario.caregivers:
-        if (
-            caregiver.caregiver_id not in scenario.unavailable_caregiver_ids
-            and (not caregiver.external_provider or scenario.policy.allow_external_backup_providers)
-            and (
-                caregiver.is_trusted
-                or (
-                    not scenario.policy.require_trusted_caregiver
-                    and scenario.policy.unapproved_caregiver_allowed
-                )
-            )
-        ):
-            available.extend(caregiver.availability)
-    for parent_id in scenario.parent_ids:
-        parent_windows = [required]
-        for event in scenario.parent_events:
-            if event.owner_id != parent_id or (event.movable and not event.critical):
-                continue
-            parent_windows = [
-                remainder
-                for window in parent_windows
-                for remainder in _subtract(window, event.window)
-            ]
-        available.extend(parent_windows)
+    # Imported lazily because constraint_planner consumes the backup-care contracts.
+    from app.agent.constraint_planner import build_feasible_assignment_matrix
 
-    uncovered = _uncovered(required, available)
+    matrix = build_feasible_assignment_matrix(
+        scenario,
+        affected_windows=affected_windows,
+        preserved_segments=preserved_segments,
+    )
+    known_options_insufficient = not (matrix.care_primitives or matrix.transport_primitives)
+    uncovered = (
+        list(affected_windows)
+        if known_options_insufficient and affected_windows
+        else matrix.connected_uncovered_windows
+        if known_options_insufficient
+        else []
+    )
     return RecoveryNeed(
         requested_windows=uncovered,
-        known_options_insufficient=bool(uncovered),
-        research_needed=bool(uncovered) and scenario.policy.allow_external_backup_providers,
+        known_options_insufficient=known_options_insufficient,
+        research_needed=(
+            known_options_insufficient and scenario.policy.allow_external_backup_providers
+        ),
         already_considered_caregiver_ids=[
             caregiver.caregiver_id for caregiver in scenario.caregivers
         ],
@@ -169,45 +170,6 @@ def add_researched_caregiver(
         child_age_years=scenario.child_age_years,
         backup_care_candidates=scenario.backup_care_candidates,
     )
-
-
-def _uncovered(required: CoverageWindow, available: list[CoverageWindow]) -> list[CoverageWindow]:
-    clipped = [
-        CoverageWindow(start=max(required.start, window.start), end=min(required.end, window.end))
-        for window in available
-        if window.start < required.end and required.start < window.end
-    ]
-    merged = _merge(clipped)
-    cursor = required.start
-    uncovered: list[CoverageWindow] = []
-    for window in merged:
-        if window.start > cursor:
-            uncovered.append(CoverageWindow(start=cursor, end=window.start))
-        cursor = max(cursor, window.end)
-    if cursor < required.end:
-        uncovered.append(CoverageWindow(start=cursor, end=required.end))
-    return uncovered
-
-
-def _merge(windows: list[CoverageWindow]) -> list[CoverageWindow]:
-    merged: list[CoverageWindow] = []
-    for window in sorted(windows, key=lambda item: (item.start, item.end)):
-        if not merged or window.start > merged[-1].end:
-            merged.append(window)
-        elif window.end > merged[-1].end:
-            merged[-1] = CoverageWindow(start=merged[-1].start, end=window.end)
-    return merged
-
-
-def _subtract(available: CoverageWindow, blocked: CoverageWindow) -> list[CoverageWindow]:
-    if available.end <= blocked.start or blocked.end <= available.start:
-        return [available]
-    remaining: list[CoverageWindow] = []
-    if available.start < blocked.start:
-        remaining.append(CoverageWindow(start=available.start, end=blocked.start))
-    if blocked.end < available.end:
-        remaining.append(CoverageWindow(start=blocked.end, end=available.end))
-    return remaining
 
 
 def _is_covered(required: CoverageWindow, availability: list[CoverageWindow]) -> bool:

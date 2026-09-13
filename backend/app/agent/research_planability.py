@@ -6,13 +6,15 @@ from app.agent.backup_care_researcher import BackupCareResearchRun
 from app.agent.constraint_planner import (
     FeasibleAssignmentMatrix,
     PlannerOperation,
+    build_feasible_assignment_matrix,
     build_planner_invocation_input,
 )
 from app.agent.recovery_orchestrator import PlanningBrief, PlanningMode
 from app.fixtures import DemoScenario
-from app.models import BackupCareCandidate
+from app.models import BackupCareCandidate, CoverageWindow, RecoveryPlanSegment
 from app.observability import log_event
 from app.services import add_researched_caregiver
+from app.services.backup_care import RecoveryNeed, search_backup_care_candidates
 
 
 class NoPlanableResearchCandidateError(RuntimeError):
@@ -27,6 +29,42 @@ class PlanableResearchCandidate:
     rank: int
     scenario: DemoScenario
     matrix: FeasibleAssignmentMatrix
+
+
+def planable_research_candidate_ids(
+    *,
+    scenario: DemoScenario,
+    recovery_need: RecoveryNeed,
+    affected_windows: list[CoverageWindow] | None = None,
+    preserved_segments: list[RecoveryPlanSegment] | None = None,
+) -> list[str]:
+    """Return grounded candidates that can complete the connected path, without a model call."""
+
+    search = search_backup_care_candidates(scenario, recovery_need.requested_windows)
+    if len(search.eligible_candidates) < 2:
+        # The existing research agent contract compares multiple grounded options.
+        # Do not enter that workflow when its input contract cannot be satisfied.
+        return []
+    preserved_ids = {segment.segment_id for segment in preserved_segments or []}
+    planable: list[str] = []
+    for candidate in search.eligible_candidates:
+        candidate_scenario = add_researched_caregiver(scenario, candidate)
+        matrix = build_feasible_assignment_matrix(
+            candidate_scenario,
+            affected_windows=affected_windows,
+            preserved_segments=preserved_segments,
+        )
+        primitives = [*matrix.care_primitives, *matrix.transport_primitives]
+        immutable_ids = {item.primitive_id for item in primitives if item.immutable}
+        if (
+            primitives
+            and preserved_ids <= immutable_ids
+            and any(
+                item.assigned_person_id == candidate.candidate_id for item in matrix.care_primitives
+            )
+        ):
+            planable.append(candidate.candidate_id)
+    return planable
 
 
 def select_planable_research_candidate(

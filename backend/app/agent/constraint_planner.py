@@ -176,6 +176,7 @@ class FeasibleAssignmentMatrix(ContractModel):
     people: list[FeasiblePersonAssignment]
     care_primitives: list[FeasibleCarePrimitive]
     transport_primitives: list[FeasibleTransportPrimitive]
+    connected_uncovered_windows: list[CoverageWindow] = Field(default_factory=list)
     hard_unavailable_care_windows: list[HardUnavailableCareWindow]
     excluded_person_ids: list[str]
     family_home_location_id: str
@@ -322,6 +323,71 @@ def _prune_to_full_coverage_paths(
         [item for item in care_primitives if item.primitive_id in retained],
         [item for item in transport_primitives if item.primitive_id in retained],
     )
+
+
+def _connected_uncovered_windows(
+    care_primitives: list[FeasibleCarePrimitive],
+    transport_primitives: list[FeasibleTransportPrimitive],
+    required: CoverageWindow,
+    home_location_id: str,
+) -> list[CoverageWindow]:
+    """Find the smallest same-location bridge between reachable path frontiers."""
+
+    primitives = [*care_primitives, *transport_primitives]
+
+    def states(
+        primitive: FeasibleCarePrimitive | FeasibleTransportPrimitive,
+    ) -> tuple[tuple[Any, str], tuple[Any, str]]:
+        destination = (
+            primitive.destination_location_id
+            if isinstance(primitive, FeasibleTransportPrimitive)
+            else primitive.location_id
+        )
+        return (
+            (primitive.window.start, primitive.location_id),
+            (primitive.window.end, destination),
+        )
+
+    forward = {(required.start, home_location_id)}
+    changed = True
+    while changed:
+        changed = False
+        for primitive in primitives:
+            start, end = states(primitive)
+            if start in forward and end not in forward:
+                forward.add(end)
+                changed = True
+    if any(moment == required.end for moment, _location in forward):
+        return []
+
+    backward = {end for primitive in primitives if (end := states(primitive)[1])[0] == required.end}
+    changed = True
+    while changed:
+        changed = False
+        for primitive in primitives:
+            start, end = states(primitive)
+            if end in backward and start not in backward:
+                backward.add(start)
+                changed = True
+
+    bridges = [
+        CoverageWindow(start=forward_time, end=backward_time)
+        for forward_time, forward_location in forward
+        for backward_time, backward_location in backward
+        if forward_location == backward_location and forward_time < backward_time
+    ]
+    if not bridges:
+        return [required]
+    return [
+        min(
+            bridges,
+            key=lambda window: (
+                window.end - window.start,
+                window.start,
+                window.end,
+            ),
+        )
+    ]
 
 
 def _preserved_primitive(
@@ -712,6 +778,12 @@ def _build_feasible_assignment_matrix(
             affected_windows or [],
             preserved_segments or [],
         )
+    connected_uncovered_windows = _connected_uncovered_windows(
+        care_primitives,
+        transport_primitives,
+        required,
+        home,
+    )
     care_primitives, transport_primitives = _prune_to_full_coverage_paths(
         care_primitives,
         transport_primitives,
@@ -723,6 +795,7 @@ def _build_feasible_assignment_matrix(
         people=sorted(people, key=lambda item: (item.source.value, item.person_id)),
         care_primitives=care_primitives,
         transport_primitives=transport_primitives,
+        connected_uncovered_windows=connected_uncovered_windows,
         hard_unavailable_care_windows=sorted(
             hard_unavailable,
             key=lambda item: (item.window.start, item.person_id, item.event_id),
@@ -904,6 +977,8 @@ def canonical_planner_input(planner_input: PlannerInvocationInput) -> str:
             del payload[optional_field]
     matrix = payload.get("feasible_assignment_matrix")
     if matrix is not None:
+        # Connected gaps drive deterministic orchestration but are not another Planner input.
+        matrix.pop("connected_uncovered_windows", None)
         matrix.pop("people", None)
         for category in ("care_primitives", "transport_primitives"):
             for primitive in matrix[category]:
