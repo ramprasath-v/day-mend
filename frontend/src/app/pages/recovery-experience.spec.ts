@@ -38,22 +38,38 @@ describe('Repairing day experience', () => {
       providers: [{ provide: RecoveryStore, useValue: state }, { provide: FamilyService, useValue: { get: () => of(familyFixture) } }],
     }).compileComponents();
   });
-  it('keeps the schedule above secondary recovery activity and shows measured elapsed time without a percentage', () => {
+  it('puts one live working strip below the hero and above the week and detailed day', () => {
     const f = TestBed.createComponent(TodayPage); f.detectChanges();
     const html = f.nativeElement as HTMLElement;
     expect(html.textContent).toContain('Working for 38s');
     expect(html.textContent).not.toContain('%');
+    const hero = html.querySelector('app-recovery-hero')!;
+    const working = html.querySelector('.live-working')!;
+    const week = html.querySelector('app-week-care-strip')!;
+    const detail = html.querySelector('app-repair-zone')!;
+    expect(hero.compareDocumentPosition(working) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(working.compareDocumentPosition(week) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(week.compareDocumentPosition(detail) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(html.querySelector('app-repair-zone')!.compareDocumentPosition(html.querySelector('app-live-recovery')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(html.querySelectorAll('.pulse').length).toBe(1);
+    expect(html.querySelectorAll('.working-dot').length).toBe(1);
   });
-  it('keeps the activity journal collapsed until requested and retains every recorded event', () => {
+  it('provides an accessible disclosure that switches arrows and retains every event', () => {
     state.progressEvents.set([event('RECOVERY_STARTED', 1), event('PLANNER_STARTED', 2)]);
     const f = TestBed.createComponent(TodayPage); f.detectChanges();
     const details = f.nativeElement.querySelector('app-live-recovery details') as HTMLDetailsElement;
+    const summary = details.querySelector('summary') as HTMLElement;
     expect(details.open).toBeFalse();
-    expect(details.querySelector('summary')!.textContent).toContain('2 recorded events');
-    details.querySelector('summary')!.click();
+    expect(summary.getAttribute('aria-expanded')).toBe('false');
+    expect(summary.textContent).toContain('▶');
+    expect(summary.textContent).toContain('2 recorded events');
+    summary.focus();
+    expect(document.activeElement).toBe(summary);
+    summary.click();
+    details.dispatchEvent(new Event('toggle'));
+    f.detectChanges();
     expect(details.open).toBeTrue();
+    expect(summary.getAttribute('aria-expanded')).toBe('true');
+    expect(summary.textContent).toContain('▼');
     expect(details.querySelectorAll('ol li').length).toBe(2);
   });
   it('distinguishes sending the decline from confirmed unavailability without waiting for Plan B', () => {
@@ -66,18 +82,41 @@ describe('Repairing day experience', () => {
     expect(f.nativeElement.textContent).toContain('Unchanged in the current plan');
     expect(f.nativeElement.textContent).toContain('Backup sitter');
   });
-  it('maps real research and validation events to the current phase, not imagined steps', () => {
+  it('maps only real recovery events to concise parent-facing phases', () => {
     const f = TestBed.createComponent(TodayPage);
-    state.progressEvents.set([event('RESEARCH_STARTED')]); f.detectChanges();
-    expect(f.nativeElement.querySelector('[role="status"]').textContent).toContain('Looking for backup care');
-    state.progressEvents.set([event('VALIDATION_STARTED', 2)]); f.detectChanges();
-    expect(f.nativeElement.querySelector('[role="status"]').textContent).toContain('Checking timing, travel and cost');
+    const phases: Array<[string, string]> = [
+      ['RECOVERY_STARTED', 'Checking your day'],
+      ['ORCHESTRATOR_STARTED', 'Checking your day'],
+      ['DISRUPTION_ASSESSED', 'Keeping what still works'],
+      ['KNOWN_OPTIONS_EXHAUSTED', 'Looking for backup care'],
+      ['RESEARCH_STARTED', 'Looking for backup care'],
+      ['RESEARCH_RESULTS_READY', 'Checking replacement care'],
+      ['BACKUP_SELECTED', 'Checking replacement care'],
+      ['VALIDATION_STARTED', 'Checking the revised day'],
+      ['EXECUTION_STARTED', 'Putting the recovery into action'],
+      ['COMPLETION_VERIFIED', 'Verifying coverage'],
+    ];
+    for (const [eventType, expected] of phases) {
+      state.progressEvents.set([event(eventType)]);
+      f.detectChanges();
+      expect(f.componentInstance.workingPhase()).withContext(eventType).toBe(expected);
+    }
     expect(f.nativeElement.textContent).not.toContain('Today is covered again');
   });
   it('does not reuse a completed Plan A phase for the new decline', () => {
     state.progressEvents.set([event('RESEARCH_STARTED'), event('PLAN_A_ACCEPTED', 2, 'COMPLETED')]);
     const f = TestBed.createComponent(TodayPage); f.detectChanges();
-    expect(f.nativeElement.querySelector('[role="status"]').textContent).toContain('Sending the change');
+    expect(f.componentInstance.workingPhase()).toBeNull();
+    expect(f.nativeElement.querySelector('.live-working').textContent).not.toContain('Looking for backup care');
+  });
+  it('shows the approval phase only when an accepted Plan B actually requires approval', () => {
+    state.progressEvents.set([
+      event('PLAN_A_ACCEPTED', 1, 'COMPLETED'),
+      event('REPLANNING_STARTED', 2),
+      { ...event('PLAN_B_ACCEPTED', 3, 'COMPLETED'), details: { requires_approval: true } },
+    ]);
+    const f = TestBed.createComponent(TodayPage); f.detectChanges();
+    expect(f.componentInstance.workingPhase()).toBe('Waiting for your decision');
   });
   it('does not paint failed completion as success', () => {
     const f = TestBed.createComponent(LiveRecoveryComponent);
@@ -138,7 +177,7 @@ describe('Repairing day experience', () => {
     const f = TestBed.createComponent(TodayPage); f.detectChanges();
     expect(f.nativeElement.textContent).toContain('3 actions completed');
     expect(f.nativeElement.textContent).toContain('What changed');
-    expect(f.nativeElement.querySelector('.pulse')).toBeNull();
+    expect(f.nativeElement.querySelector('.live-working')).toBeNull();
     expect(f.nativeElement.textContent).toContain('Care date');
     expect(f.nativeElement.textContent).toContain('Thu, Aug 27');
     expect(f.nativeElement.textContent).toContain('Recovery run completed');

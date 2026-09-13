@@ -33,15 +33,13 @@ export class WeekCareStripComponent {
     const anchor = this.calendarDate(window.start);
     if (!anchor) return [];
 
-    const mondayOffset = (anchor.getDay() + 6) % 7;
     const weekStart = new Date(anchor);
-    weekStart.setDate(anchor.getDate() - mondayOffset);
     const careState = this.careDateState(window);
 
     return Array.from({ length: 7 }, (_, index) => {
       const date = new Date(weekStart);
       date.setDate(weekStart.getDate() + index);
-      const isCareDate = this.dateKey(date) === this.dateKey(anchor);
+      const isCareDate = index === 0;
       const weekend = date.getDay() === 0 || date.getDay() === 6;
       return {
         key: this.dateKey(date),

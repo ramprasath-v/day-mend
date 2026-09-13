@@ -15,7 +15,7 @@
           [attr.aria-current]="day.isCareDate ? 'date' : null"
         >
           <div class="day-label">
-            <span>{{ day.weekday }}</span>
+            <span>{{ day.isCareDate ? 'Today · ' + day.weekday : day.weekday }}</span>
             <time [attr.datetime]="day.key">{{ day.date }}</time>
           </div>
           <div class="care-block">

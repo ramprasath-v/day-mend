@@ -1,4 +1,4 @@
-import { Component, computed, input } from '@angular/core';
+import { Component, computed, input, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { RecoveryCase, RecoveryProgressEvent } from '../../core/recovery.models';
 import { NotificationMode } from '../../core/family.service';
@@ -10,6 +10,7 @@ import { NotificationMode } from '../../core/family.service';
   styleUrl: './live-recovery.css',
 })
 export class LiveRecoveryComponent {
+  readonly journalExpanded = signal(false);
   readonly events = input<RecoveryProgressEvent[]>([]);
   readonly recovery = input<RecoveryCase | null>(null);
   readonly busy = input(false);
@@ -95,5 +96,9 @@ export class LiveRecoveryComponent {
     return this.recovery()?.events.some(
       (event) => event.details['outcome_code'] === 'NO_RECOVERY_OPTION',
     ) ?? false;
+  }
+
+  onJournalToggle(event: Event): void {
+    this.journalExpanded.set((event.currentTarget as HTMLDetailsElement).open);
   }
 }

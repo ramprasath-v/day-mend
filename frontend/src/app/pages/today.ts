@@ -4,7 +4,12 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FamilyService, NotificationMode } from '../core/family.service';
 import { DatePipe } from '@angular/common';
 import { RecoveryStore } from '../core/recovery.store';
-import { CoverageSegment, CoverageWindow, RecoveryEvent } from '../core/recovery.models';
+import {
+  CoverageSegment,
+  CoverageWindow,
+  RecoveryEvent,
+  RecoveryProgressEvent,
+} from '../core/recovery.models';
 import { friendlyPerson } from '../core/recovery-status';
 import { ApprovalCardComponent } from '../components/approval-card/approval-card';
 import { CoveragePlanComponent } from '../components/coverage-plan/coverage-plan';
@@ -125,6 +130,15 @@ export class TodayPage {
   });
   readonly pendingNotificationMode = signal<NotificationMode>('decisions_only');
   readonly careWindow = signal<CoverageWindow | null>(null);
+  readonly workingPhase = computed(() => {
+    if (!this.store.loading()) return null;
+    const events = this.currentOperationEvents();
+    for (const event of [...events].reverse()) {
+      const phase = this.parentFacingPhase(event);
+      if (phase) return phase;
+    }
+    return null;
+  });
   constructor() {
     // Presentation only: this request must never gate or fail the recovery mutation.
     inject(FamilyService).get().pipe(takeUntilDestroyed()).subscribe({
@@ -175,5 +189,53 @@ export class TodayPage {
         Date.parse(candidate['start']) < Date.parse(candidate['end'])
       );
     });
+  }
+
+  private currentOperationEvents(): RecoveryProgressEvent[] {
+    const events = [...this.store.progressEvents()].sort(
+      (left, right) => left.sequence - right.sequence,
+    );
+    const action = this.store.actionInProgress();
+    if (action !== 'declining' && action !== 'approving') return events;
+    if (action === 'declining') {
+      const operationStart = events.reduce(
+        (last, event, index) =>
+          ['WORLD_STATE_CHANGED', 'REPLANNING_STARTED'].includes(event.event_type) ? index : last,
+        -1,
+      );
+      if (operationStart >= 0) return events.slice(operationStart);
+    }
+    const boundaryTypes =
+      action === 'declining'
+        ? ['PLAN_A_ACCEPTED', 'PLAN_B_ACCEPTED']
+        : ['PLAN_B_ACCEPTED', 'APPROVAL_REQUIRED'];
+    const boundary = events.reduce(
+      (last, event, index) => (boundaryTypes.includes(event.event_type) ? index : last),
+      -1,
+    );
+    return events.slice(boundary + 1);
+  }
+
+  private parentFacingPhase(event: RecoveryProgressEvent): string | null {
+    const phases: Record<string, string> = {
+      RECOVERY_STARTED: 'Checking your day',
+      ORCHESTRATOR_STARTED: 'Checking your day',
+      DISRUPTION_ASSESSED: 'Keeping what still works',
+      SEGMENTS_PRESERVED: 'Keeping what still works',
+      KNOWN_OPTIONS_EXHAUSTED: 'Looking for backup care',
+      RESEARCH_STARTED: 'Looking for backup care',
+      RESEARCH_RESULTS_READY: 'Checking replacement care',
+      BACKUP_SELECTED: 'Checking replacement care',
+      VALIDATION_STARTED: 'Checking the revised day',
+      EXECUTION_STARTED: 'Putting the recovery into action',
+      COMPLETION_VERIFIED: 'Verifying coverage',
+    };
+    if (
+      event.event_type === 'PLAN_B_ACCEPTED' &&
+      (event.details.requires_approval || this.store.currentCase()?.pending_approval)
+    ) {
+      return 'Waiting for your decision';
+    }
+    return phases[event.event_type] ?? null;
   }
 }

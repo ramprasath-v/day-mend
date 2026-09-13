@@ -1,4 +1,14 @@
 <app-recovery-hero [recovery]="store.currentCase()" [careDate]="store.demoCareDate()" [busy]="store.loading()" (resetDemo)="store.resetDemo()" />
+@if (store.loading()) {
+  <section class="live-working" role="status" aria-live="polite" aria-label="Current recovery activity">
+    <span class="working-dot" aria-hidden="true"></span>
+    <div>
+      <strong>DayMend is working</strong>
+      <span>@if (workingPhase(); as phase) { {{ phase }} · }{{ store.elapsedSeconds() }}s</span>
+    </div>
+    <small>{{ store.progressConnected() ? 'Live updates connected' : 'Updates reconnecting; request may still be running' }}</small>
+  </section>
+}
 <app-week-care-strip [careWindow]="careWindow()" [recovery]="store.currentCase()" [busy]="store.loading()" [action]="store.actionInProgress()" />
 @if (store.error(); as error) {
   <div class="error-banner" role="alert"><p>{{ error }}</p><button class="button button--secondary" (click)="store.refresh()" [disabled]="store.loading()">Try refresh</button></div>
@@ -91,10 +101,6 @@
     <p class="eyebrow">Today’s care</p>
     <h2 id="recovering-day-title">The care window being repaired</h2>
     <div class="normal-span"><time>8:00 AM–4:00 PM</time><strong>Nanny unavailable</strong><span>DayMend is finding a safe replacement.</span></div>
-  </section>
-} @else {
-  <section class="normal-day"><p class="eyebrow">Demo day · scheduled care</p><h2>One continuous care window</h2>
-    <div class="normal-span"><time>8:00 AM–4:00 PM</time><strong>Nanny</strong><span>Scheduled childcare</span></div>
   </section>
 }
 @if (store.currentCase() || store.loading() || store.error()) {

@@ -26,13 +26,31 @@ describe('WeekCareStripComponent', () => {
     return fixture.nativeElement.querySelector('[aria-current="date"]');
   }
 
-  it('renders a seven-day care strip with the seeded care date highlighted', () => {
+  it('renders Today first followed by the next six days', () => {
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.querySelectorAll('[data-week-day]').length).toBe(7);
+    const days = fixture.nativeElement.querySelectorAll('[data-week-day]') as NodeListOf<HTMLElement>;
+    expect(days.length).toBe(7);
+    expect(days[0]).toBe(currentDay());
+    expect(days[0].textContent).toContain('Today · Thu');
     expect(currentDay().textContent).toContain('Nanny');
     expect(currentDay().textContent).toContain('8:00 AM–4:00 PM');
     expect(currentDay().textContent).toContain('Scheduled');
+  });
+
+  it('keeps canonical care on Today when the demo care date is a weekend', () => {
+    fixture.componentRef.setInput('careWindow', {
+      start: '2026-09-13T08:00:00-07:00',
+      end: '2026-09-13T16:00:00-07:00',
+    });
+    fixture.detectChanges();
+
+    const days = fixture.nativeElement.querySelectorAll('[data-week-day]') as NodeListOf<HTMLElement>;
+    expect(days[0].textContent).toContain('Today · Sun');
+    expect(days[0].textContent).toContain('Nanny');
+    expect(days[0].textContent).toContain('8:00 AM–4:00 PM');
+    expect([...days].slice(1, 6).every((day) => day.textContent?.includes('Nanny'))).toBeTrue();
+    expect(days[6].textContent).toContain('No scheduled care');
   });
 
   it('changes only the care date while the first recovery is running', () => {

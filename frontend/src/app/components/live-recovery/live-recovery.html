@@ -1,10 +1,16 @@
 <section class="journal" [class.working]="busy()" [class.settled]="recovery()?.status === 'RESOLVED'" aria-label="Recovery updates">
-  <details>
-    <summary><span>How DayMend handled this</span><small>{{ journalSummary() }}</small></summary>
+  <details (toggle)="onJournalToggle($event)">
+    <summary [attr.aria-expanded]="journalExpanded()">
+      <span class="disclosure-title">
+        <span class="disclosure-arrow" aria-hidden="true">{{ journalExpanded() ? '▼' : '▶' }}</span>
+        <span>How DayMend handled this</span>
+      </span>
+      <small>{{ journalSummary() }}</small>
+    </summary>
     @if (showStatusSummary()) {
       <div class="recovery-strip">
         <div class="strip-heading">
-          <span class="live-mark" [class.pulse]="busy() && !error()" aria-hidden="true">{{ recovery()?.status === 'RESOLVED' ? '✓' : '↳' }}</span>
+          <span class="live-mark" aria-hidden="true">{{ recovery()?.status === 'RESOLVED' ? '✓' : '↳' }}</span>
           <div><p class="current" role="status">{{ phase() }}</p>
             @if (busy()) { <p class="elapsed">Working for {{ elapsedSeconds() }}s · {{ connected() ? 'Live updates connected' : 'Updates reconnecting; request may still be running' }}</p> }
             @else if (recovery()?.status === 'RESOLVED') { <p class="elapsed">Recovery complete · {{ completedActions() }} actions completed · Coverage verified</p> }

@@ -106,6 +106,10 @@ describe('DayMend recovery experience', () => {
     const fixture = create();
     expect(text(fixture)).toContain('Your childcare is covered this week.');
     expect(text(fixture)).toContain('Nanny unavailable');
+    expect(text(fixture)).not.toContain('One continuous care window');
+    expect(fixture.debugElement.query(By.css('.normal-day'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('app-coverage-plan'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('app-repair-zone'))).toBeNull();
     expect(fixture.debugElement.query(By.css('input'))).toBeNull();
     expect(fixture.debugElement.query(By.css('textarea'))).toBeNull();
   });
