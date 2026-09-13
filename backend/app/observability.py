@@ -53,6 +53,7 @@ _SAFE_FIELDS = {
     "requires_approval",
     "request_id",
     "retry_number",
+    "retry_reason",
     "research_agent_invocation_count",
     "response_status",
     "status",

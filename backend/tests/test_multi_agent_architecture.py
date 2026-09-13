@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 from strands import Agent
+from strands.types.exceptions import MaxTokensReachedException
 
 from app.agent.config import AgentArchitecture, RecoveryAgentConfig
 from app.agent.constraint_planner import (
@@ -23,12 +24,19 @@ from app.agent.recovery_orchestrator import (
     ConstraintCategory,
     PlanningBrief,
     PlanningMode,
+    ReplanningBriefDecision,
     build_recovery_orchestrator,
+    create_replanning_brief,
 )
 from app.fixtures import get_legacy_demo_scenario
 from app.models import PlanValidationState, RecoveryPlan, RecoveryStatus
 from app.observability import LOGGER_NAME
-from app.services import PlanValidator, ValidationErrorCode, create_active_recovery_case
+from app.services import (
+    PlanInvalidationService,
+    PlanValidator,
+    ValidationErrorCode,
+    create_active_recovery_case,
+)
 from tests.milestone2_helpers import (
     at,
     grandma_decline_event,
@@ -58,6 +66,19 @@ class StubPlanner:
         if structured_output_model is None:
             return SimpleNamespace(structured_output=None)
         return SimpleNamespace(structured_output=self.proposals.pop(0))
+
+
+class SequencedOrchestrator:
+    def __init__(self, responses: list[object]) -> None:
+        self.responses = responses.copy()
+        self.calls: list[tuple[str, object]] = []
+
+    def __call__(self, prompt: str, *, structured_output_model=None) -> SimpleNamespace:
+        self.calls.append((prompt, structured_output_model))
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return SimpleNamespace(structured_output=response)
 
 
 class CountingValidator(PlanValidator):
@@ -115,6 +136,30 @@ def active_case():
         validated_plan=validated_plan_a(),
         required_coverage=scenario.required_coverage,
         now=at(7, 10),
+    )
+
+
+def replanning_outcome():
+    return PlanInvalidationService().apply_caregiver_decline(
+        active_case(),
+        grandma_decline_event(),
+        get_legacy_demo_scenario(),
+    )
+
+
+def compact_replanning_decision() -> ReplanningBriefDecision:
+    return ReplanningBriefDecision(
+        planning_required=True,
+        objective="Replace the affected care while retaining preserved coverage.",
+        affected_window_ids=["affected_window_1"],
+        affected_segment_ids=["grandma-midday"],
+        preserved_segment_ids=["parent-morning", "backup-afternoon"],
+        backup_research_needed=True,
+        relevant_constraint_categories=[
+            ConstraintCategory.COVERAGE,
+            ConstraintCategory.PLAN_PRESERVATION,
+        ],
+        planner_directives=["Repair only the affected coverage and connected handoffs."],
     )
 
 
@@ -224,7 +269,7 @@ def test_replanning_brief_receives_deterministic_impact_and_planner_builds_plan_
     )
 
     assert len(orchestrator.calls) == 1
-    assert orchestrator.calls[0][1] is PlanningBrief
+    assert orchestrator.calls[0][1] is ReplanningBriefDecision
     assert brief.planning_mode is PlanningMode.WORLD_STATE_REPLAN
     assert brief.affected_windows == [window(10, 13)]
     assert len(brief.affected_segments) == 1
@@ -246,6 +291,94 @@ def test_replanning_brief_receives_deterministic_impact_and_planner_builds_plan_
     assert result.invalidated_assumptions[0].subject_id == "grandma"
     assert [segment.segment_id for segment in result.impacted_segments] == ["grandma-midday"]
     assert ValidationErrorCode.CAREGIVER_UNAVAILABLE.value in planner.calls[2][0]
+
+
+def test_replanning_orchestrator_receives_only_compact_identified_scope() -> None:
+    orchestrator = SequencedOrchestrator([compact_replanning_decision()])
+
+    result = create_replanning_brief(
+        orchestrator=orchestrator,
+        recorder=ToolInvocationRecorder(),
+        outcome=replanning_outcome(),
+    )
+
+    prompt, output_model = orchestrator.calls[0]
+    assert output_model is ReplanningBriefDecision
+    assert '"affected_segment_ids":["grandma-midday"]' in prompt
+    assert '"preserved_segment_ids"' in prompt
+    assert '"current_active_plan":' not in prompt
+    assert '"coverage_segments"' not in prompt
+    assert '"invalidated_assumptions"' not in prompt
+    assert '"family_policy"' not in prompt
+    assert '"feasible_assignment_matrix"' not in prompt
+    assert '"validator_feedback"' not in prompt
+    assert result.brief.affected_segments == list(replanning_outcome().impacted_segments)
+    assert result.brief.preserved_segments == list(replanning_outcome().preserved_segments)
+    assert result.brief.triggering_event == grandma_decline_event()
+
+
+def test_replanning_brief_retries_one_max_token_failure_with_smaller_context(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger=LOGGER_NAME)
+    orchestrator = SequencedOrchestrator(
+        [
+            MaxTokensReachedException("truncated"),
+            compact_replanning_decision(),
+        ]
+    )
+
+    result = create_replanning_brief(
+        orchestrator=orchestrator,
+        recorder=ToolInvocationRecorder(),
+        outcome=replanning_outcome(),
+    )
+
+    assert len(orchestrator.calls) == 2
+    assert all(call[1] is ReplanningBriefDecision for call in orchestrator.calls)
+    assert len(orchestrator.calls[1][0]) < len(orchestrator.calls[0][0])
+    assert '"affected_windows"' not in orchestrator.calls[1][0]
+    assert result.brief.planning_required
+    assert result.model_call_count == 1
+    events = [json.loads(record.message) for record in caplog.records]
+    assert {
+        "event_type": "replanning_brief_retry",
+        "operation": "REPLANNING",
+        "retry_number": 1,
+        "retry_reason": "max_tokens",
+        "error_type": "MaxTokensReachedException",
+    } in events
+
+
+def test_replanning_brief_second_max_token_failure_propagates_after_one_retry() -> None:
+    orchestrator = SequencedOrchestrator(
+        [
+            MaxTokensReachedException("first truncation"),
+            MaxTokensReachedException("second truncation"),
+        ]
+    )
+
+    with pytest.raises(MaxTokensReachedException, match="second truncation"):
+        create_replanning_brief(
+            orchestrator=orchestrator,
+            recorder=ToolInvocationRecorder(),
+            outcome=replanning_outcome(),
+        )
+
+    assert len(orchestrator.calls) == 2
+
+
+def test_replanning_brief_does_not_retry_other_exceptions() -> None:
+    orchestrator = SequencedOrchestrator([RuntimeError("service failure")])
+
+    with pytest.raises(RuntimeError, match="service failure"):
+        create_replanning_brief(
+            orchestrator=orchestrator,
+            recorder=ToolInvocationRecorder(),
+            outcome=replanning_outcome(),
+        )
+
+    assert len(orchestrator.calls) == 1
 
 
 def test_multi_agent_repair_never_exceeds_existing_three_attempt_cap() -> None:

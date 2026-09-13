@@ -430,6 +430,40 @@ describe('DayMend recovery experience', () => {
     expect(text(fixture)).not.toContain("We couldn't build a safe recovery plan.");
   });
 
+  it('maps a reached-backend replanning failure without claiming DayMend is unreachable', () => {
+    const fixture = create();
+    startAndFlush(fixture);
+    fixture.debugElement
+      .query(By.css('app-demo-controls .button--secondary'))
+      .nativeElement.click();
+    http
+      .expectOne(`${environment.apiBaseUrl}/recoveries/case-ui-demo/events`)
+      .flush(
+        { error: { code: 'INTERNAL_ERROR', message: 'internal runtime detail' } },
+        { status: 500, statusText: 'Internal Server Error' },
+      );
+    fixture.detectChanges();
+
+    expect(text(fixture)).toContain("DayMend couldn't complete replanning. Please try again.");
+    expect(text(fixture)).not.toContain('Unable to reach DayMend.');
+    expect(text(fixture)).not.toContain('internal runtime detail');
+  });
+
+  it('keeps the unreachable message for a network failure during replanning', () => {
+    const fixture = create();
+    startAndFlush(fixture);
+    fixture.debugElement
+      .query(By.css('app-demo-controls .button--secondary'))
+      .nativeElement.click();
+    http
+      .expectOne(`${environment.apiBaseUrl}/recoveries/case-ui-demo/events`)
+      .error(new ProgressEvent('error'));
+    fixture.detectChanges();
+
+    expect(text(fixture)).toContain('Unable to reach DayMend.');
+    expect(text(fixture)).not.toContain("DayMend couldn't complete replanning.");
+  });
+
   it('maps every backend status to parent-friendly copy', () => {
     expect(RECOVERY_STATUS_COPY.DETECTED.eyebrow).toBe('Childcare changed');
     expect(RECOVERY_STATUS_COPY.REPLANNING.title).toContain('another option');

@@ -151,7 +151,7 @@ export class RecoveryStore {
           this.currentCase.set(recovery);
           globalThis.localStorage?.setItem(this.storageKey, recovery.recovery_case_id);
         },
-        error: (error: HttpErrorResponse) => this.error.set(this.safeMessage(error)),
+        error: (error: HttpErrorResponse) => this.error.set(this.safeMessage(error, action)),
       });
   }
 
@@ -227,13 +227,19 @@ export class RecoveryStore {
       : 'DayMend received an inconsistent approval result. Refresh before taking another action.';
   }
 
-  private safeMessage(error: HttpErrorResponse): string {
+  private safeMessage(error: HttpErrorResponse, action: RecoveryAction): string {
     const code = error.error?.error?.code as string | undefined;
     if (code === 'STALE_APPROVAL' || code === 'APPROVAL_ALREADY_FINALIZED') {
       return 'That approval is no longer current. Refresh the recovery and try again.';
     }
-    if (code === 'PLANNING_FAILED' || code === 'REPLANNING_FAILED') {
+    if (code === 'PLANNING_FAILED') {
       return "We couldn't build a safe recovery plan.";
+    }
+    if (
+      code === 'REPLANNING_FAILED' ||
+      (action === 'declining' && code === 'INTERNAL_ERROR')
+    ) {
+      return "DayMend couldn't complete replanning. Please try again.";
     }
     if (code === 'PERSISTENCE_CONFLICT') {
       return 'This recovery changed elsewhere. Refresh to see the latest state.';

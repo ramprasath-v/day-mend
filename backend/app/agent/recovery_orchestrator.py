@@ -7,6 +7,7 @@ from typing import Any, Protocol
 from pydantic import Field
 from strands import Agent
 from strands.models import BedrockModel
+from strands.types.exceptions import MaxTokensReachedException
 
 from app.agent.config import RecoveryAgentConfig
 from app.agent.recovery_agent import ToolInvocationRecorder, model_call_count
@@ -18,6 +19,7 @@ from app.models import (
     RecoveryPlanSegment,
     RecoveryStatus,
 )
+from app.observability import log_event
 from app.services import InvalidationOutcome, RecoveryNeed, SegmentImpactReason
 from app.tools import get_childcare_schedule, use_scenario
 
@@ -66,6 +68,22 @@ class PlanningBrief(ContractModel):
     recommended_backup_care_candidate_id: str | None = None
 
 
+class ReplanningBriefDecision(ContractModel):
+    """Small model-owned decision materialized into an authoritative PlanningBrief."""
+
+    planning_required: bool
+    objective: str = Field(min_length=1, max_length=240)
+    affected_window_ids: list[str] = Field(default_factory=list, max_length=8)
+    affected_segment_ids: list[str] = Field(default_factory=list, max_length=24)
+    preserved_segment_ids: list[str] = Field(default_factory=list, max_length=24)
+    backup_research_needed: bool = False
+    relevant_constraint_categories: list[ConstraintCategory] = Field(
+        min_length=1,
+        max_length=6,
+    )
+    planner_directives: list[str] = Field(default_factory=list, max_length=4)
+
+
 class RecoveryOrchestratorLike(Protocol):
     """Narrow structured invocation surface for real Strands and offline fakes."""
 
@@ -73,7 +91,7 @@ class RecoveryOrchestratorLike(Protocol):
         self,
         prompt: str,
         *,
-        structured_output_model: type[PlanningBrief] | None = None,
+        structured_output_model: type[ContractModel] | None = None,
     ) -> Any: ...
 
 
@@ -192,58 +210,130 @@ def create_replanning_brief(
     """Scope Plan B using deterministic invalidation and impact facts."""
 
     event = outcome.recovery_case.events[-1]
+    affected_windows = [
+        {
+            "window_id": f"affected_window_{index}",
+            "start": window.start.isoformat(),
+            "end": window.end.isoformat(),
+        }
+        for index, window in enumerate(outcome.uncovered_windows, start=1)
+    ]
     context = {
         "planning_mode": PlanningMode.WORLD_STATE_REPLAN,
         "recovery_case_id": outcome.recovery_case.case_id,
-        "disruption": outcome.recovery_case.disruption,
-        "current_recovery_status": outcome.recovery_case.status,
-        "current_active_plan": outcome.recovery_case.active_recovery_plan.model_dump(mode="json"),
-        "triggering_event": event.model_dump(mode="json"),
-        "invalidated_assumptions": [
-            assumption.model_dump(mode="json") for assumption in outcome.invalidated_assumptions
+        "current_active_plan_id": outcome.recovery_case.active_recovery_plan.plan_id,
+        "triggering_event_id": event.event_id,
+        "triggering_event_type": event.event_type,
+        "excluded_caregiver_ids": [event.caregiver_id] if event.caregiver_id else [],
+        "invalidated_assumption_ids": [
+            assumption.assumption_id for assumption in outcome.invalidated_assumptions
         ],
-        "affected_windows": [
-            window.model_dump(mode="json") for window in outcome.uncovered_windows
-        ],
-        "impacted_segments": [
-            segment.model_dump(mode="json") for segment in outcome.impacted_segments
-        ],
-        "impact_reasons": [reason.model_dump(mode="json") for reason in outcome.impact_reasons],
-        "preserved_segments": [
-            segment.model_dump(mode="json") for segment in outcome.preserved_segments
-        ],
+        "affected_windows": affected_windows,
+        "affected_segment_ids": [segment.segment_id for segment in outcome.impacted_segments],
+        "impact_reason_codes": [reason.reason_code for reason in outcome.impact_reasons],
+        "preserved_segment_ids": [segment.segment_id for segment in outcome.preserved_segments],
     }
-    return _invoke_orchestrator(
-        orchestrator=orchestrator,
-        recorder=recorder,
-        scenario=outcome.updated_scenario,
-        prompt=(
-            "Create the replanning brief after this authoritative world-state change. Decide the "
-            "repair focus while retaining every deterministically preserved Plan A segment. "
-            f"Deterministic recovery context: {_compact_json(context)}"
-        ),
-        authoritative_updates={
-            "recovery_case_id": outcome.recovery_case.case_id,
-            "planning_mode": PlanningMode.WORLD_STATE_REPLAN,
-            "triggering_event": event,
-            "current_active_plan_id": outcome.recovery_case.active_recovery_plan.plan_id,
-            "current_recovery_status": outcome.recovery_case.status,
-            "invalidated_assumption_ids": [
-                assumption.assumption_id for assumption in outcome.invalidated_assumptions
-            ],
-            "required_coverage_window": outcome.updated_scenario.required_coverage,
-            "affected_windows": list(outcome.uncovered_windows),
-            "affected_segments": list(outcome.impacted_segments),
-            "affected_segment_reasons": list(outcome.impact_reasons),
-            "preserved_segments": list(outcome.preserved_segments),
-            "excluded_caregiver_ids": [event.caregiver_id] if event.caregiver_id else [],
-            "known_options_insufficient": False,
-            "unresolved_known_option_windows": [],
-            "backup_research_needed": False,
-            "researched_candidate_ids": [],
-            "recommended_backup_care_candidate_id": None,
-        },
+    retry_context = {
+        "recovery_case_id": context["recovery_case_id"],
+        "triggering_event_id": context["triggering_event_id"],
+        "excluded_caregiver_ids": context["excluded_caregiver_ids"],
+        "affected_window_ids": [window["window_id"] for window in affected_windows],
+        "affected_segment_ids": context["affected_segment_ids"],
+        "preserved_segment_ids": context["preserved_segment_ids"],
+    }
+    tools_before = len(recorder.tool_names)
+    retry_count = 0
+    with use_scenario(outcome.updated_scenario):
+        try:
+            result = orchestrator(
+                _replanning_prompt(context),
+                structured_output_model=ReplanningBriefDecision,
+            )
+        except MaxTokensReachedException:
+            retry_count = 1
+            log_event(
+                "replanning_brief_retry",
+                operation="REPLANNING",
+                retry_number=1,
+                retry_reason="max_tokens",
+                error_type="MaxTokensReachedException",
+            )
+            result = orchestrator(
+                _replanning_retry_prompt(retry_context),
+                structured_output_model=ReplanningBriefDecision,
+            )
+    if result.structured_output is None:
+        raise RuntimeError("Strands Recovery Orchestrator returned no replanning decision")
+    decision = _replanning_decision(result.structured_output, context)
+    if not decision.planning_required:
+        raise RuntimeError("Recovery Orchestrator declined required childcare planning")
+    brief = PlanningBrief(
+        recovery_case_id=outcome.recovery_case.case_id,
+        planning_mode=PlanningMode.WORLD_STATE_REPLAN,
+        planning_required=True,
+        objective=decision.objective,
+        triggering_event=event,
+        current_active_plan_id=outcome.recovery_case.active_recovery_plan.plan_id,
+        current_recovery_status=outcome.recovery_case.status,
+        invalidated_assumption_ids=[
+            assumption.assumption_id for assumption in outcome.invalidated_assumptions
+        ],
+        required_coverage_window=outcome.updated_scenario.required_coverage,
+        affected_windows=list(outcome.uncovered_windows),
+        affected_segments=list(outcome.impacted_segments),
+        affected_segment_reasons=list(outcome.impact_reasons),
+        preserved_segments=list(outcome.preserved_segments),
+        excluded_caregiver_ids=[event.caregiver_id] if event.caregiver_id else [],
+        relevant_constraint_categories=decision.relevant_constraint_categories,
+        planner_directives=decision.planner_directives,
+        known_options_insufficient=False,
+        unresolved_known_option_windows=[],
+        backup_research_needed=False,
+        researched_candidate_ids=[],
+        recommended_backup_care_candidate_id=None,
     )
+    return OrchestratorResult(
+        brief=brief,
+        model_call_count=retry_count + model_call_count(result),
+        tools_used=recorder.tool_names[tools_before:],
+    )
+
+
+def _replanning_prompt(context: dict[str, Any]) -> str:
+    return (
+        "Return only ReplanningBriefDecision structured fields. No prose, explanation, schedule "
+        "restatement, or chain-of-thought. Use the supplied window and segment IDs. Decide the "
+        "concise recovery objective and relevant constraint categories from this deterministic "
+        f"scope: {_compact_json(context)}"
+    )
+
+
+def _replanning_retry_prompt(context: dict[str, Any]) -> str:
+    return (
+        "Retry with only ReplanningBriefDecision structured fields. No prose or explanation. "
+        "Use these deterministic IDs without restating any plan or schedule: "
+        f"{_compact_json(context)}"
+    )
+
+
+def _replanning_decision(
+    output: Any,
+    context: dict[str, Any],
+) -> ReplanningBriefDecision:
+    if isinstance(output, ReplanningBriefDecision):
+        return output
+    if isinstance(output, PlanningBrief):
+        return ReplanningBriefDecision(
+            planning_required=output.planning_required,
+            objective=output.objective,
+            affected_window_ids=[window["window_id"] for window in context["affected_windows"]],
+            affected_segment_ids=context["affected_segment_ids"],
+            preserved_segment_ids=context["preserved_segment_ids"],
+            backup_research_needed=output.backup_research_needed,
+            relevant_constraint_categories=output.relevant_constraint_categories,
+            planner_directives=output.planner_directives[:4],
+        )
+    return ReplanningBriefDecision.model_validate(output)
 
 
 def _invoke_orchestrator(
