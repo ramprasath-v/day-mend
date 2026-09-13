@@ -2,14 +2,15 @@
 
 > “When childcare falls through, your whole day shouldn’t.”
 
-**Watch demo — video link coming soon** · **[Try live demo](https://d28bm0qb8qheeh.cloudfront.net/)**
+**Demo video: Coming before submission** · **[Try live demo](https://d28bm0qb8qheeh.cloudfront.net/)**
 
 When a backup caregiver declines, DayMend repairs only the affected coverage, preserves what still
 works, and asks the parent only when a real decision is needed.
 
-> **What is real / what is simulated:** Strands agents, AgentCore, Claude Sonnet 4.5, validation,
-> replanning, approval policy, persistence, and live orchestration are real. Backup-provider
-> inventory is synthetic; booking, calendar, messaging, and payment execution are simulated.
+> **What is real / what is simulated:** Strands reasoning, AgentCore, orchestration, replanning,
+> the Backup Care Research decision, feasibility validation, family policy, the approval boundary,
+> persistence/versioning, completion verification, and live SSE progress are real. Backup-provider
+> inventory is synthetic; booking, calendar, messaging, and payment actions are simulated.
 > `RESOLVED` means deterministic completion within the demo scenario and simulated execution
 > results.
 
@@ -51,8 +52,9 @@ The proven demo follows one continuous recovery:
 4. Grandma declines, changing authoritative world state.
 5. DayMend identifies invalidated coverage and materially preserved Plan A segments.
 6. Known family options are insufficient, so Backup Care Research runs once.
-7. The Planner proposes a valid Plan B using Harbor Nanny Coop from synthetic provider inventory.
-8. Deterministic cost is `$87.75`, above the family’s `$30` automatic-spend threshold.
+7. A deterministic post-research planability gate rejects infeasible providers before the Planner;
+   the Planner then selects a valid Plan B from authoritative primitives using Harbor Nanny Coop.
+8. Deterministic cost is `$94.50`, above the family’s `$30` automatic-spend threshold.
 9. DayMend pauses for human approval.
 10. Approval resumes the same `RecoveryCase`; two simulated actions execute successfully.
 11. Deterministic completion verification passes and the case becomes `RESOLVED`.
@@ -100,9 +102,12 @@ us.anthropic.claude-sonnet-4-5-20250929-v1:0
 1. **Recovery Orchestrator Agent** turns the disruption or world-state change into a focused
    planning brief and coordinates the reasoning operation.
 2. **Constraint Planner Agent** composes a complete `RecoveryPlan` candidate and repairs only from
-   explicit structured validator feedback when necessary.
+   explicit structured validator feedback when necessary. For preservation-aware Plan B paths that
+   have a complete feasible matrix, it selects authoritative primitive IDs instead of inventing
+   segment details.
 3. **Backup Care Research Agent** ranks eligible records from the synthetic provider fixture only
-   when deterministic interval analysis proves known options cannot cover the affected window.
+   when deterministic analysis proves known options cannot cover the affected window. Researched
+   candidates must pass a deterministic planability gate before Planner execution.
 
 Deterministic services are not additional agents.
 
@@ -114,6 +119,12 @@ facts, locations, travel durations, and policy into a `FeasibleAssignmentMatrix`
 destination, and required duration. Invalid combinations are excluded before the Planner sees
 them, while Claude still chooses how to combine feasible care and transport primitives into a
 whole-day plan.
+
+During preservation-aware replanning, when the matrix can represent the complete repaired day,
+immutable preserved segments become required primitive IDs and Claude selects only from those
+authoritative IDs. Application code materializes the exact people, timestamps, locations,
+transport, and costs from the selected primitives, then runs the independent validator. This
+prevents invented or resized segments without making deterministic code choose the plan.
 
 The independent `PlanValidator` remains the source of truth. A bounded repair loop allows at most
 three plan proposals; the limit and validation rules are never relaxed.
@@ -158,7 +169,7 @@ not averages, benchmarks, or reliability rates.
 | Plan A server latency | 32.031s |
 | Plan B | Valid on first Planner attempt |
 | Plan B server latency | 60.495s |
-| Deterministic cost | $87.75 |
+| Deterministic cost | $94.50 |
 | Automatic-spend threshold | $30; human approval required |
 | Execution | 2 simulated actions succeeded |
 | Completion | Deterministically verified |
@@ -261,8 +272,8 @@ same case; rejection performs no execution and cannot produce `RESOLVED`.
 
 Verified at code freeze:
 
-- Backend: **167 tests passed**
-- Frontend: **24 tests passed**
+- Backend: **231 tests passed**
+- Frontend: **89 tests passed**
 - Ruff lint: passed
 - Ruff formatting check: passed
 - Python `compileall`: passed

@@ -66,7 +66,12 @@ The Orchestrator interprets the disruption or replanning context and produces a 
 ### Constraint Planner Agent
 
 The Planner composes a complete structured `RecoveryPlan`. Initial proposals use normalized
-feasibility primitives. Repair proposals receive the complete shared invocation contract:
+feasibility primitives. When a preservation-aware feasible matrix can represent the complete
+repaired day, the Planner instead selects stable primitive IDs. Required immutable IDs preserve
+surviving segments, and application code materializes exact plan details from authoritative
+primitives before validation. Replanning that requires calendar changes not represented by
+primitives retains the complete-plan contract. Repair proposals receive the shared invocation
+contract:
 
 - authoritative context or normalized initial matrix;
 - `PlanningBrief`;
@@ -81,10 +86,11 @@ session.
 
 ### Backup Care Research Agent
 
-Deterministic interval analysis invokes research only when known family options cannot cover the
-affected window. The agent ranks hard-eligible records from a synthetic provider fixture. Its
-recommendation becomes authoritative Planner and validator context, but it cannot bypass trust,
-coverage, cost, or approval rules.
+Deterministic analysis invokes research only when known family options cannot produce a complete
+feasible path through the affected window. The agent ranks hard-eligible records from a synthetic
+provider fixture. A deterministic post-research planability gate rejects candidates that cannot
+join the preserved plan before Planner execution. A viable recommendation becomes authoritative
+Planner and validator context, but it cannot bypass trust, coverage, cost, or approval rules.
 
 Harbor Nanny Coop and all provider records are fictional. There is no integration with Care.com or
 another provider marketplace.
@@ -109,9 +115,10 @@ Care primitives include only eligible people and permitted windows. A
 - required route duration;
 - `capability = ALLOWED`.
 
-Incapable transporters and routes that do not fit an authorized window are excluded. Claude still
-chooses among feasible primitives and decides the overall ordering, handoffs, and strategy; the
-application does not construct the answer.
+Incapable transporters and routes that do not fit an authorized window are excluded. For initial
+planning, Claude composes the plan from feasible context. For a preservation-aware replan with a
+complete matrix, Claude selects primitive IDs and the application deterministically materializes
+their authoritative segment details. Deterministic code does not choose the candidate combination.
 
 ## Validation and bounded repair
 

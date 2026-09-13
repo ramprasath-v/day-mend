@@ -71,6 +71,11 @@ Initial planning now uses a generic `FeasibleAssignmentMatrix` and explicit
 initial context and excludes impossible caregiver/transport combinations without constructing the
 answer for Claude.
 
+Preservation-aware Plan B uses authoritative primitive-ID selection when the feasible matrix can
+materialize the complete repair. Immutable preserved primitives are required, exact segments are
+materialized deterministically, and a post-research planability gate rejects infeasible providers
+before Planner execution.
+
 The final hosted proof achieved:
 
 - valid Plan A on Planner attempt 1, about 32.0 seconds server-side;
@@ -79,13 +84,13 @@ The final hosted proof achieved:
 - one Backup Care Research invocation;
 - valid Plan B on Planner attempt 1, about 60.5 seconds;
 - Harbor Nanny Coop selected from fictional provider inventory;
-- deterministic cost `$87.75` and approval above `$30`;
+- deterministic cost `$94.50` and approval above `$30`;
 - two successful simulated actions;
 - deterministic completion, `RESOLVED`, and persistence after reload;
 - healthy SSE live progress and no browser console errors.
 
 The editorial frontend, responsive Plan B recommendation, rejection behavior, and DayMend favicon
-were verified in production. At code freeze, 167 backend tests and 24 frontend tests passed.
+were verified in production. At submission cleanup, 231 backend tests and 89 frontend tests passed.
 
 ## Submitted state
 

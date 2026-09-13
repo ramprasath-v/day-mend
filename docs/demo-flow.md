@@ -50,19 +50,22 @@ Known family options cannot cover the affected window. Deterministic interval an
 invokes the Backup Care Research Agent exactly once.
 
 The agent ranks eligible synthetic records and recommends Harbor Nanny Coop. It does not book care
-or bypass validation. The recommended record enters the authoritative planning context.
+or bypass validation. A deterministic post-research planability gate rejects providers that cannot
+join the preserved plan before the Planner runs. The viable record then enters the authoritative
+planning context.
 
 ### 6. Plan B
 
-The Constraint Planner produces a complete replacement plan. The hosted proof reached valid Plan B
-on the first Planner attempt in about 60.5 seconds, including the research operation.
+The Constraint Planner selects from authoritative primitive IDs for this preservation-aware Plan B,
+and application code materializes the exact segments before independent validation. The hosted
+proof reached valid Plan B on the first Planner attempt in about 60.5 seconds, including research.
 
 Plan B replaces the affected window with Harbor Nanny Coop while preserving still-valid late-day
-coverage. Deterministic cost is `$87.75`.
+coverage. Deterministic cost is `$94.50`.
 
 ### 7. Human approval
 
-The family’s automatic-spend threshold is `$30`. Because `$87.75 > $30`, deterministic policy sets
+The family’s automatic-spend threshold is `$30`. Because `$94.50 > $30`, deterministic policy sets
 the case to `APPROVAL_REQUIRED` and the UI presents the proposed provider, coverage window, cost,
 threshold, and reason for the pause.
 
@@ -101,7 +104,7 @@ version, and `RESOLVED` status remain attached to that case.
 | World-state change | Grandma decline recorded on the same case |
 | Research | One Backup Care Research invocation |
 | Plan B | Valid on Planner attempt 1; ~60.5 s |
-| Cost and approval | `$87.75`; approval required above `$30` |
+| Cost and approval | `$94.50`; approval required above `$30` |
 | Execution | Two simulated actions succeeded |
 | Completion | Deterministic verification passed |
 | Final status | `RESOLVED` |

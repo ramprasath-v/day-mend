@@ -9,8 +9,9 @@ npm install
 npm start
 ```
 
-The development configuration calls `http://localhost:8000`. Production builds use a same-origin
-API base URL; deployment may replace `src/environments/environment.ts` as needed.
+The development configuration calls `http://localhost:8000`. Production reads the API base URL at
+runtime from `window.__DAYMEND_CONFIG__` in `public/config.js`. The tracked template stays empty;
+deployment writes the hosted URL only into the generated bundle before upload.
 
 Run verification with:
 

@@ -42,7 +42,7 @@ The proven App Runner configuration is:
 ```bash
 DAYMEND_AGENT_RUNTIME=agentcore
 DAYMEND_AGENT_ARCHITECTURE=multi_research
-DAYMEND_AGENTCORE_RUNTIME_ARN=arn:aws:bedrock-agentcore:us-east-1:109837542034:runtime/daymend_reasoning-nVUAuPG7rz
+DAYMEND_AGENTCORE_RUNTIME_ARN='<AGENTCORE_RUNTIME_ARN>'
 DAYMEND_BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-5-20250929-v1:0
 DAYMEND_RECOVERY_REPOSITORY=dynamodb
 DAYMEND_RECOVERY_TABLE=daymend-demo-recovery-cases
@@ -69,7 +69,7 @@ must pass the explicit current values:
 AWS_REGION=us-east-1 \
 DAYMEND_AGENT_RUNTIME=agentcore \
 DAYMEND_AGENT_ARCHITECTURE=multi_research \
-DAYMEND_AGENTCORE_RUNTIME_ARN=arn:aws:bedrock-agentcore:us-east-1:109837542034:runtime/daymend_reasoning-nVUAuPG7rz \
+DAYMEND_AGENTCORE_RUNTIME_ARN='<AGENTCORE_RUNTIME_ARN>' \
 DAYMEND_BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-5-20250929-v1:0 \
 ./scripts/deploy-aws.sh
 ```
@@ -82,8 +82,8 @@ The App Runner instance role can read/write the recovery table and, when AgentCo
 invoke exactly these runtime resources:
 
 ```text
-arn:aws:bedrock-agentcore:us-east-1:109837542034:runtime/daymend_reasoning-nVUAuPG7rz
-arn:aws:bedrock-agentcore:us-east-1:109837542034:runtime/daymend_reasoning-nVUAuPG7rz/runtime-endpoint/DEFAULT
+<AGENTCORE_RUNTIME_ARN>
+<AGENTCORE_RUNTIME_ARN>/runtime-endpoint/DEFAULT
 ```
 
 The AgentCore execution role can:
@@ -146,7 +146,7 @@ The final hosted proof established:
 - Plan A valid on the first Planner attempt in about 32.0 seconds server-side;
 - Plan B valid on the first Planner attempt in about 60.5 seconds;
 - one Backup Care Research invocation;
-- deterministic `$87.75` cost and approval above the `$30` threshold;
+- deterministic `$94.50` cost and approval above the `$30` threshold;
 - two successful simulated actions;
 - deterministic completion and `RESOLVED`;
 - DynamoDB reload of the same case;
