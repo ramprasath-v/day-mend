@@ -166,7 +166,7 @@ def test_initial_multi_agent_flow_uses_brief_then_planner_and_deterministic_repa
     assert '"authoritative_context"' not in planner.calls[0][0]
     assert '"transport_primitives"' in planner.calls[0][0]
     assert "Compose the plan only from FeasibleAssignmentMatrix" in planner.calls[0][0]
-    assert "do not invent or combine transport fields across primitives" in planner.calls[0][0]
+    assert "Do not shorten, extend, combine, or invent primitives" in planner.calls[0][0]
     assert validator.calls == 2
     assert result.total_attempts == 2
     assert result.success is True
@@ -177,8 +177,8 @@ def test_initial_multi_agent_flow_uses_brief_then_planner_and_deterministic_repa
     assert ValidationErrorCode.COVERAGE_GAP.value in planner.calls[1][0]
     assert '"previous_candidate"' in planner.calls[1][0]
     assert "invalid-claim" in planner.calls[1][0]
-    assert '"feasible_assignment_matrix"' not in planner.calls[1][0]
-    assert "Compose the plan only from FeasibleAssignmentMatrix" not in planner.calls[1][0]
+    assert '"feasible_assignment_matrix"' in planner.calls[1][0]
+    assert "Compose the plan only from FeasibleAssignmentMatrix" in planner.calls[1][0]
     assert result.architecture == "multi"
     assert result.orchestrator_invocation_count == 1
     assert result.planner_invocation_count == 2

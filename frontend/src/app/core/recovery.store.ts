@@ -233,7 +233,7 @@ export class RecoveryStore {
       return 'That approval is no longer current. Refresh the recovery and try again.';
     }
     if (code === 'PLANNING_FAILED' || code === 'REPLANNING_FAILED') {
-      return "DayMend couldn't complete this recovery plan.";
+      return "We couldn't build a safe recovery plan.";
     }
     if (code === 'PERSISTENCE_CONFLICT') {
       return 'This recovery changed elsewhere. Refresh to see the latest state.';

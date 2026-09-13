@@ -27,12 +27,13 @@ from app.models import (
     ContractModel,
     CoverageSource,
     CoverageWindow,
+    PlanSegmentType,
     PlanValidationState,
     RecoveryPlan,
     RecoveryPlanSegment,
 )
 from app.observability import log_event
-from app.services import PlanValidationIssue, PlanValidator
+from app.services import PlanValidationIssue, PlanValidator, ValidationErrorCode
 from app.tools import RECOVERY_CONTEXT_TOOLS, use_scenario
 from app.tools.recovery_context import planner_context_snapshot
 
@@ -59,7 +60,7 @@ CONSTRAINT_PLANNER_INSTRUCTIONS = (
         "For INITIAL_PLANNING, application code has already normalized all five authoritative "
         "context categories into FeasibleAssignmentMatrix and SoftRankingPreferences. Compose only "
         "from those normalized primitives; do not call the context tools or re-derive eligibility. "
-        "Repair and replanning inputs explicitly provide their complete authoritative context.",
+        "Repair and replanning inputs provide the same normalized feasibility contract.",
     )
 )
 CONSTRAINT_PLANNER_INSTRUCTIONS = (
@@ -71,8 +72,8 @@ CONSTRAINT_PLANNER_INSTRUCTIONS = (
         "that the tools did not return.",
         "You receive a complete structured PlannerInvocationInput. For INITIAL_PLANNING, its "
         "FeasibleAssignmentMatrix is the only feasibility source and all windows use start/end. "
-        "SoftRankingPreferences are separate and rank feasible combinations only. For repair and "
-        "replanning, authoritative_context supplies the unchanged raw tool facts. Do not invent a "
+        "The same matrix is supplied again for repair and replanning. SoftRankingPreferences are "
+        "separate and rank feasible combinations only. Do not invent a "
         "person, event, availability window, route, price, or policy.",
     )
     .replace(
@@ -127,15 +128,43 @@ class FeasiblePersonAssignment(ContractModel):
     movable_calendar_constraints: list[MovableCalendarConstraint] = Field(default_factory=list)
 
 
-class FeasibleTransportPrimitive(ContractModel):
-    """One eligible transporter-window-route combination for Planner selection."""
+class FeasibleCarePrimitive(ContractModel):
+    """One exact stationary-care segment available for Planner composition."""
 
+    primitive_id: str
+    assigned_person_id: str
+    source: CoverageSource
+    segment_type: Literal["CARE"] = "CARE"
+    window: CoverageWindow
+    location_id: str
+    location_label: str
+    capability: Literal["ALLOWED"] = "ALLOWED"
+
+
+class FeasibleTransportPrimitive(ContractModel):
+    """One exact supervised-transport segment available for Planner composition."""
+
+    primitive_id: str
+    assigned_person_id: str
+    source: CoverageSource
+    segment_type: Literal["TRANSPORT"] = "TRANSPORT"
     transporter_id: str
-    permitted_window: CoverageWindow
-    origin_location_id: str
+    window: CoverageWindow
+    location_id: str
+    location_label: str
     destination_location_id: str
+    destination_location_label: str
     required_duration_minutes: int
     capability: Literal["ALLOWED"] = "ALLOWED"
+
+
+class HardUnavailableCareWindow(ContractModel):
+    """One authoritative interval that cannot be assigned to a parent."""
+
+    person_id: str
+    window: CoverageWindow
+    reason: str
+    event_id: str
 
 
 class FeasibleAssignmentMatrix(ContractModel):
@@ -143,7 +172,10 @@ class FeasibleAssignmentMatrix(ContractModel):
 
     required_coverage_window: CoverageWindow
     people: list[FeasiblePersonAssignment]
+    care_primitives: list[FeasibleCarePrimitive]
     transport_primitives: list[FeasibleTransportPrimitive]
+    hard_unavailable_care_windows: list[HardUnavailableCareWindow]
+    excluded_person_ids: list[str]
     family_home_location_id: str
     require_trusted_caregiver: bool
     unapproved_caregiver_allowed: bool
@@ -172,18 +204,12 @@ class PlannerInvocationInput(ContractModel):
             self.previous_candidate is None or not self.validator_feedback
         ):
             raise ValueError("PLAN_REPAIR requires previous candidate and validator feedback")
-        if self.operation is PlannerOperation.INITIAL_PLANNING and (
+        if (
             self.authoritative_context is not None
             or self.feasible_assignment_matrix is None
             or self.soft_ranking_preferences is None
         ):
-            raise ValueError(
-                "INITIAL_PLANNING requires only normalized feasibility and soft preferences"
-            )
-        if self.operation is not PlannerOperation.INITIAL_PLANNING and (
-            self.authoritative_context is None or self.feasible_assignment_matrix is not None
-        ):
-            raise ValueError("repair and replanning require authoritative context")
+            raise ValueError("all Planner operations require only normalized feasibility data")
         return self
 
 
@@ -215,6 +241,60 @@ def _subtract_windows(
     return remaining
 
 
+def _prune_to_full_coverage_paths(
+    care_primitives: list[FeasibleCarePrimitive],
+    transport_primitives: list[FeasibleTransportPrimitive],
+    required: CoverageWindow,
+    home_location_id: str,
+) -> tuple[list[FeasibleCarePrimitive], list[FeasibleTransportPrimitive]]:
+    """Keep only exact primitives that participate in a continuous full-window path."""
+
+    primitives = [*care_primitives, *transport_primitives]
+
+    def states(
+        primitive: FeasibleCarePrimitive | FeasibleTransportPrimitive,
+    ) -> tuple[tuple[Any, str], tuple[Any, str]]:
+        destination = (
+            primitive.destination_location_id
+            if isinstance(primitive, FeasibleTransportPrimitive)
+            else primitive.location_id
+        )
+        return (
+            (primitive.window.start, primitive.location_id),
+            (primitive.window.end, destination),
+        )
+
+    forward = {(required.start, home_location_id)}
+    changed = True
+    while changed:
+        changed = False
+        for primitive in primitives:
+            start, end = states(primitive)
+            if start in forward and end not in forward:
+                forward.add(end)
+                changed = True
+
+    backward = {end for primitive in primitives if (end := states(primitive)[1])[0] == required.end}
+    changed = True
+    while changed:
+        changed = False
+        for primitive in primitives:
+            start, end = states(primitive)
+            if end in backward and start not in backward:
+                backward.add(start)
+                changed = True
+
+    retained = {
+        primitive.primitive_id
+        for primitive in primitives
+        if states(primitive)[0] in forward and states(primitive)[1] in backward
+    }
+    return (
+        [item for item in care_primitives if item.primitive_id in retained],
+        [item for item in transport_primitives if item.primitive_id in retained],
+    )
+
+
 def _build_feasible_assignment_matrix(
     context: PlannerAuthoritativeContext,
 ) -> FeasibleAssignmentMatrix:
@@ -240,7 +320,7 @@ def _build_feasible_assignment_matrix(
     ]
     people: list[FeasiblePersonAssignment] = []
     feasible_caregivers: list[dict[str, Any]] = []
-    transporter_windows: dict[str, list[CoverageWindow]] = {}
+    caregiver_care_windows: dict[str, list[CoverageWindow]] = {}
     for caregiver in eligible_caregivers:
         care_windows = [
             intersection
@@ -256,10 +336,7 @@ def _build_feasible_assignment_matrix(
         if not care_windows:
             continue
         feasible_caregivers.append(caregiver)
-        if caregiver["can_transport_child"] and (
-            not caregiver["external_provider"] or policy["allow_provider_transport"]
-        ):
-            transporter_windows[caregiver["caregiver_id"]] = care_windows
+        caregiver_care_windows[caregiver["caregiver_id"]] = care_windows
         people.append(
             FeasiblePersonAssignment(
                 person_id=caregiver["caregiver_id"],
@@ -280,6 +357,9 @@ def _build_feasible_assignment_matrix(
             *(caregiver["location_id"] for caregiver in feasible_caregivers),
         }
     )
+    parent_care_windows: dict[str, list[CoverageWindow]] = {}
+    parent_transport_windows: dict[str, list[CoverageWindow]] = {}
+    hard_unavailable: list[HardUnavailableCareWindow] = []
     for parent in parents:
         events = sorted(parent["events"], key=lambda item: item["event_id"])
         blocked = [
@@ -288,6 +368,17 @@ def _build_feasible_assignment_matrix(
             if event["critical"] or not event["movable"]
         ]
         care_windows = _subtract_windows(required, blocked)
+        parent_care_windows[parent["parent_id"]] = care_windows
+        hard_unavailable.extend(
+            HardUnavailableCareWindow(
+                person_id=parent["parent_id"],
+                window=_window_from_values(event["starts_at"], event["ends_at"]),
+                reason="Protected critical or non-movable calendar commitment.",
+                event_id=event["event_id"],
+            )
+            for event in events
+            if event["critical"] or not event["movable"]
+        )
         transport_windows: list[CoverageWindow] = []
         if parent["transport"]["can_transport_child"]:
             for raw_window in parent["transport"]["availability"]:
@@ -297,7 +388,7 @@ def _build_feasible_assignment_matrix(
                 if intersection is not None:
                     transport_windows.extend(_subtract_windows(intersection, blocked))
         if transport_windows:
-            transporter_windows[parent["parent_id"]] = transport_windows
+            parent_transport_windows[parent["parent_id"]] = transport_windows
         people.append(
             FeasiblePersonAssignment(
                 person_id=parent["parent_id"],
@@ -316,36 +407,257 @@ def _build_feasible_assignment_matrix(
             )
         )
 
-    routes: list[tuple[str, str, int]] = []
     home = schedule["family_home_location_id"]
+    home_label = "Family home"
+    transport_by_key: dict[tuple[Any, ...], FeasibleTransportPrimitive] = {}
     for caregiver in feasible_caregivers:
-        destination = caregiver["location_id"]
-        if destination == home:
-            continue
+        caregiver_id = caregiver["caregiver_id"]
+        location_id = caregiver["location_id"]
         duration = caregiver["travel_minutes_from_family_home"]
-        routes.extend([(home, destination, duration), (destination, home, duration)])
-    transport_primitives = [
-        FeasibleTransportPrimitive(
-            transporter_id=transporter_id,
-            permitted_window=window,
-            origin_location_id=origin,
-            destination_location_id=destination,
-            required_duration_minutes=duration,
+        if location_id == home or duration <= 0:
+            continue
+        duration_delta = timedelta(minutes=duration)
+        caregiver_windows = caregiver_care_windows[caregiver_id]
+
+        for parent_id, windows in sorted(parent_transport_windows.items()):
+            for care_window in caregiver_windows:
+                for origin, destination, departure, arrival in (
+                    (home, location_id, care_window.start - duration_delta, care_window.start),
+                    (location_id, home, care_window.end - duration_delta, care_window.end),
+                ):
+                    trip = CoverageWindow(start=departure, end=arrival)
+                    if not any(
+                        window.start <= trip.start and window.end >= trip.end for window in windows
+                    ):
+                        continue
+                    primitive = FeasibleTransportPrimitive(
+                        primitive_id=(
+                            f"transport:{parent_id}:{trip.start.isoformat()}:{origin}:{destination}"
+                        ),
+                        assigned_person_id=parent_id,
+                        source=CoverageSource.PARENT,
+                        transporter_id=parent_id,
+                        window=trip,
+                        location_id=origin,
+                        location_label=(
+                            home_label if origin == home else caregiver["location_label"]
+                        ),
+                        destination_location_id=destination,
+                        destination_location_label=(
+                            home_label if destination == home else caregiver["location_label"]
+                        ),
+                        required_duration_minutes=duration,
+                    )
+                    transport_by_key[
+                        (
+                            parent_id,
+                            trip.start,
+                            trip.end,
+                            origin,
+                            destination,
+                        )
+                    ] = primitive
+
+        caregiver_can_transport = caregiver["can_transport_child"] and (
+            not caregiver["external_provider"] or policy["allow_provider_transport"]
         )
-        for transporter_id, windows in sorted(transporter_windows.items())
-        for window in sorted(windows, key=lambda item: (item.start, item.end))
-        for origin, destination, duration in sorted(routes)
-        if window.end - window.start >= timedelta(minutes=duration)
-    ]
+        if caregiver_can_transport:
+            for care_window in caregiver_windows:
+                if care_window.end - care_window.start < duration_delta:
+                    continue
+                trip = CoverageWindow(start=care_window.end - duration_delta, end=care_window.end)
+                primitive = FeasibleTransportPrimitive(
+                    primitive_id=(
+                        f"transport:{caregiver_id}:{trip.start.isoformat()}:{location_id}:{home}"
+                    ),
+                    assigned_person_id=caregiver_id,
+                    source=CoverageSource.CAREGIVER,
+                    transporter_id=caregiver_id,
+                    window=trip,
+                    location_id=location_id,
+                    location_label=caregiver["location_label"],
+                    destination_location_id=home,
+                    destination_location_label=home_label,
+                    required_duration_minutes=duration,
+                )
+                transport_by_key[(caregiver_id, trip.start, trip.end, location_id, home)] = (
+                    primitive
+                )
+
+    transport_primitives = sorted(
+        transport_by_key.values(),
+        key=lambda item: (
+            item.window.start,
+            item.window.end,
+            item.transporter_id,
+            item.location_id,
+            item.destination_location_id,
+        ),
+    )
+    care_primitives: list[FeasibleCarePrimitive] = []
+    for caregiver in feasible_caregivers:
+        caregiver_id = caregiver["caregiver_id"]
+        for care_window in caregiver_care_windows[caregiver_id]:
+            connected_departures = [
+                item.window.start
+                for item in transport_primitives
+                if item.location_id == caregiver["location_id"]
+                and item.destination_location_id == home
+                and item.window.end == care_window.end
+            ]
+            care_end = min(connected_departures, default=care_window.end)
+            if care_window.start >= care_end:
+                continue
+            primitive_window = CoverageWindow(start=care_window.start, end=care_end)
+            care_primitives.append(
+                FeasibleCarePrimitive(
+                    primitive_id=f"care:{caregiver_id}:{primitive_window.start.isoformat()}",
+                    assigned_person_id=caregiver_id,
+                    source=CoverageSource.CAREGIVER,
+                    window=primitive_window,
+                    location_id=caregiver["location_id"],
+                    location_label=caregiver["location_label"],
+                )
+            )
+    for parent in parents:
+        parent_id = parent["parent_id"]
+        parent_trips = [
+            item.window for item in transport_primitives if item.transporter_id == parent_id
+        ]
+        for care_window in parent_care_windows[parent_id]:
+            for primitive_window in _subtract_windows(care_window, parent_trips):
+                care_primitives.append(
+                    FeasibleCarePrimitive(
+                        primitive_id=f"care:{parent_id}:{primitive_window.start.isoformat()}",
+                        assigned_person_id=parent_id,
+                        source=CoverageSource.PARENT,
+                        window=primitive_window,
+                        location_id=home,
+                        location_label=home_label,
+                    )
+                )
+    care_primitives.sort(
+        key=lambda item: (
+            item.window.start,
+            item.window.end,
+            item.source.value,
+            item.assigned_person_id,
+        )
+    )
+    care_primitives, transport_primitives = _prune_to_full_coverage_paths(
+        care_primitives,
+        transport_primitives,
+        required,
+        home,
+    )
     return FeasibleAssignmentMatrix(
         required_coverage_window=required,
         people=sorted(people, key=lambda item: (item.source.value, item.person_id)),
+        care_primitives=care_primitives,
         transport_primitives=transport_primitives,
+        hard_unavailable_care_windows=sorted(
+            hard_unavailable,
+            key=lambda item: (item.window.start, item.person_id, item.event_id),
+        ),
+        excluded_person_ids=sorted(unavailable),
         family_home_location_id=schedule["family_home_location_id"],
         require_trusted_caregiver=policy["require_trusted_caregiver"],
         unapproved_caregiver_allowed=policy["unapproved_caregiver_allowed"],
         minimum_handoff_minutes=policy["minimum_handoff_minutes"],
     )
+
+
+def _care_primitive_summary(primitive: FeasibleCarePrimitive) -> str:
+    return (
+        f"CARE assigned_person_id={primitive.assigned_person_id} "
+        f"start={primitive.window.start.isoformat()} end={primitive.window.end.isoformat()} "
+        f"location_id={primitive.location_id}"
+    )
+
+
+def _transport_primitive_summary(primitive: FeasibleTransportPrimitive) -> str:
+    return (
+        f"TRANSPORT transporter_id={primitive.transporter_id} "
+        f"start={primitive.window.start.isoformat()} end={primitive.window.end.isoformat()} "
+        f"origin={primitive.location_id} destination={primitive.destination_location_id}"
+    )
+
+
+def _actionable_validator_feedback(
+    issues: list[PlanValidationIssue],
+    previous_candidate: RecoveryPlan | None,
+    matrix: FeasibleAssignmentMatrix,
+) -> list[PlanValidationIssue]:
+    """Attach exact feasible primitives to repairable assignment/transition findings."""
+
+    if previous_candidate is None:
+        return issues
+    ordered = sorted(
+        previous_candidate.coverage_segments,
+        key=lambda item: (item.window.start, item.window.end),
+    )
+    by_id = {segment.segment_id: segment for segment in ordered}
+    enriched: list[PlanValidationIssue] = []
+    for issue in issues:
+        segment = by_id.get(issue.segment_id or "")
+        alternatives: list[str] = []
+        if issue.code is ValidationErrorCode.CAREGIVER_UNAVAILABLE and segment is not None:
+            candidates = [
+                primitive
+                for primitive in matrix.care_primitives
+                if primitive.window.start < segment.window.end
+                and segment.window.start < primitive.window.end
+            ]
+            candidates.sort(
+                key=lambda item: (
+                    item.assigned_person_id != segment.assigned_person_id,
+                    item.window.start,
+                    item.assigned_person_id,
+                )
+            )
+            alternatives = [_care_primitive_summary(item) for item in candidates[:6]]
+        elif issue.code is ValidationErrorCode.LOCATION_TRANSITION_INVALID and segment is not None:
+            if segment.segment_type is PlanSegmentType.CARE:
+                alternatives.extend(
+                    _care_primitive_summary(item)
+                    for item in matrix.care_primitives
+                    if item.assigned_person_id == segment.assigned_person_id
+                )
+                index = ordered.index(segment)
+                if index > 0:
+                    previous = ordered[index - 1]
+                    previous_location = (
+                        previous.destination_location_id
+                        if previous.segment_type is PlanSegmentType.TRANSPORT
+                        else previous.location_id
+                    )
+                    alternatives.extend(
+                        _transport_primitive_summary(item)
+                        for item in matrix.transport_primitives
+                        if item.location_id == previous_location
+                        and item.destination_location_id == segment.location_id
+                    )
+            else:
+                alternatives.extend(
+                    _transport_primitive_summary(item)
+                    for item in matrix.transport_primitives
+                    if item.transporter_id == segment.transporter_id
+                    or (
+                        item.location_id == segment.location_id
+                        and item.destination_location_id == segment.destination_location_id
+                    )
+                )
+        alternatives = list(dict.fromkeys(alternatives))[:6]
+        if alternatives:
+            message = f"{issue.message} Feasible alternatives: {'; '.join(alternatives)}."
+            issue = issue.model_copy(
+                update={
+                    "message": message,
+                    "suggested_alternatives": alternatives,
+                }
+            )
+        enriched.append(issue)
+    return enriched
 
 
 def build_planner_invocation_input(
@@ -366,24 +678,20 @@ def build_planner_invocation_input(
         family_preferences=context["get_family_preferences"],
         family_policy=context["get_family_policy"],
     )
+    matrix = _build_feasible_assignment_matrix(authoritative_context)
+    feedback = _actionable_validator_feedback(
+        validator_feedback or [],
+        previous_candidate,
+        matrix,
+    )
     return PlannerInvocationInput(
         operation=operation,
         planning_brief=brief,
-        authoritative_context=(
-            None if operation is PlannerOperation.INITIAL_PLANNING else authoritative_context
-        ),
-        feasible_assignment_matrix=(
-            _build_feasible_assignment_matrix(authoritative_context)
-            if operation is PlannerOperation.INITIAL_PLANNING
-            else None
-        ),
-        soft_ranking_preferences=(
-            authoritative_context.family_preferences
-            if operation is PlannerOperation.INITIAL_PLANNING
-            else None
-        ),
+        authoritative_context=None,
+        feasible_assignment_matrix=matrix,
+        soft_ranking_preferences=authoritative_context.family_preferences,
         previous_candidate=previous_candidate,
-        validator_feedback=validator_feedback or [],
+        validator_feedback=feedback,
         affected_windows=brief.affected_windows,
         affected_segments=brief.affected_segments,
         preserved_segments=brief.preserved_segments,
@@ -401,6 +709,9 @@ def canonical_planner_input(planner_input: PlannerInvocationInput) -> str:
     ):
         if payload[optional_field] is None:
             del payload[optional_field]
+    matrix = payload.get("feasible_assignment_matrix")
+    if matrix is not None:
+        matrix.pop("people", None)
     return json.dumps(
         payload,
         sort_keys=True,
@@ -448,26 +759,20 @@ def render_planner_input(planner_input: PlannerInvocationInput) -> str:
             " Do not introduce new gaps, overlaps, conflicts, unavailable-caregiver assignments, "
             "or infeasible handoffs."
         )
-    initial_constraint_direction = (
-        " Compose the plan only from FeasibleAssignmentMatrix primitives. Every care or "
-        "transport segment must fit wholly inside its selected primitive's permitted_window. "
-        "Select transporter_id, origin, and destination only from one listed transport primitive; "
-        "do not invent or combine transport fields across primitives. SoftRankingPreferences rank "
-        "feasible options only. Do not call context tools or re-derive eligibility for this "
-        "initial proposal."
-        if planner_input.operation is PlannerOperation.INITIAL_PLANNING
-        else ""
-    )
-    context_description = (
-        "the normalized FeasibleAssignmentMatrix and separate SoftRankingPreferences"
-        if planner_input.operation is PlannerOperation.INITIAL_PLANNING
-        else "the PlanningBrief and the results of all five context tools"
+    primitive_direction = (
+        " Compose the plan only from FeasibleAssignmentMatrix care_primitives and "
+        "transport_primitives. Every output segment must exactly copy all material fields from "
+        "one supplied primitive: assigned_person_id, source, segment_type, start, end, location, "
+        "destination, and transporter where applicable. Do not shorten, extend, combine, or "
+        "invent primitives. hard_unavailable_care_windows and excluded_person_ids are absolute. "
+        "SoftRankingPreferences rank feasible primitive sequences only."
     )
     return (
         f"{action} Treat the complete structured PlannerInvocationInput below as authoritative; "
-        f"it contains {context_description}. Do not depend "
-        "on prior conversation for correctness. Keep validation_state NOT_VALIDATED."
-        f"{initial_constraint_direction} "
+        "it contains normalized deterministic feasibility and separate soft preferences. "
+        "Do not depend on prior conversation for correctness. Keep validation_state "
+        "NOT_VALIDATED."
+        f"{primitive_direction} "
         f"PlannerInvocationInput: {canonical_planner_input(planner_input)}"
     )
 

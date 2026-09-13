@@ -71,6 +71,7 @@ class PlanValidationIssue(ContractModel):
     subject_id: str | None = None
     segment_id: str | None = None
     event_id: str | None = None
+    suggested_alternatives: list[str] = Field(default_factory=list)
 
 
 class PlanValidationResult(ContractModel):
@@ -378,7 +379,12 @@ class PlanValidator:
                 issues.append(
                     PlanValidationIssue(
                         code=ValidationErrorCode.CAREGIVER_UNAVAILABLE,
-                        message=f"Caregiver {person_id} is unavailable due to the disruption.",
+                        message=(
+                            f"Caregiver {person_id} is unavailable due to the disruption for "
+                            f"segment {segment.segment_id} from "
+                            f"{segment.window.start.isoformat()} to "
+                            f"{segment.window.end.isoformat()}."
+                        ),
                         subject_id=person_id,
                         segment_id=segment.segment_id,
                     )
@@ -408,12 +414,21 @@ class PlanValidator:
                 window.start <= segment.window.start and window.end >= segment.window.end
                 for window in caregiver.availability
             ):
+                authoritative_availability = (
+                    ", ".join(
+                        f"{window.start.isoformat()} to {window.end.isoformat()}"
+                        for window in caregiver.availability
+                    )
+                    or "none"
+                )
                 issues.append(
                     PlanValidationIssue(
                         code=ValidationErrorCode.CAREGIVER_UNAVAILABLE,
                         message=(
                             f"Caregiver {person_id} is unavailable for segment "
-                            f"{segment.segment_id}."
+                            f"{segment.segment_id} from {segment.window.start.isoformat()} to "
+                            f"{segment.window.end.isoformat()}. Authoritative availability: "
+                            f"{authoritative_availability}."
                         ),
                         subject_id=person_id,
                         segment_id=segment.segment_id,

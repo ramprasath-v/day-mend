@@ -313,10 +313,10 @@ def test_local_and_agentcore_repair_inputs_are_canonical_and_explicit() -> None:
     assert planner_input_digest(local_input) == planner_input_digest(agentcore_input)
     assert local_input.previous_candidate == previous
     assert local_input.validator_feedback == issues
-    assert local_input.feasible_assignment_matrix is None
-    assert agentcore_input.feasible_assignment_matrix is None
-    assert local_input.authoritative_context is not None
-    assert agentcore_input.authoritative_context == local_input.authoritative_context
+    assert local_input.feasible_assignment_matrix is not None
+    assert agentcore_input.feasible_assignment_matrix == local_input.feasible_assignment_matrix
+    assert local_input.authoritative_context is None
+    assert agentcore_input.authoritative_context is None
 
 
 def test_runtime_routing_defaults_local_and_selects_agentcore(monkeypatch) -> None:

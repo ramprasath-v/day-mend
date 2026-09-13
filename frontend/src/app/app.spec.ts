@@ -416,8 +416,18 @@ describe('DayMend recovery experience', () => {
         { status: 409, statusText: 'Conflict' },
       );
     fixture.detectChanges();
-    expect(text(fixture)).toContain("DayMend couldn't complete this recovery plan.");
+    expect(text(fixture)).toContain("We couldn't build a safe recovery plan.");
     expect(text(fixture)).not.toContain('internal model details');
+  });
+
+  it('uses the reachability message only for a transport-level failure', () => {
+    const fixture = create();
+    fixture.debugElement.query(By.css('app-demo-controls .button--primary')).nativeElement.click();
+    http.expectOne(`${environment.apiBaseUrl}/recoveries`).error(new ProgressEvent('error'));
+    fixture.detectChanges();
+
+    expect(text(fixture)).toContain('Unable to reach DayMend.');
+    expect(text(fixture)).not.toContain("We couldn't build a safe recovery plan.");
   });
 
   it('maps every backend status to parent-friendly copy', () => {

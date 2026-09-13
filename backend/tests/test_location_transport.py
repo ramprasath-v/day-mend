@@ -12,6 +12,7 @@ from app.agent.config import AgentArchitecture, RecoveryAgentConfig
 from app.agent.constraint_planner import (
     PlannerOperation,
     build_planner_invocation_input,
+    canonical_planner_input,
 )
 from app.agent.multi_agent import run_multi_agent_replanning
 from app.agent.recovery_agent import ToolInvocationRecorder
@@ -150,6 +151,37 @@ def test_canonical_initial_facts_require_sitter_afternoon_instead_of_parent_a() 
     assert people["parent_a"].permitted_care_windows == [minute_window(8, 0, 9)]
     assert people["grandma"].permitted_care_windows == [minute_window(9, 0, 12, 15)]
     assert people["backup_sitter"].permitted_care_windows == [minute_window(12, 15, 16)]
+    care = {
+        (item.assigned_person_id, item.window.start, item.window.end, item.location_id)
+        for item in matrix.care_primitives
+    }
+    assert (
+        "parent_a",
+        minute_window(8, 0, 8, 45).start,
+        minute_window(8, 0, 8, 45).end,
+        "family_home",
+    ) in care
+    assert (
+        "grandma",
+        minute_window(9, 0, 12).start,
+        minute_window(9, 0, 12).end,
+        "grandma_home",
+    ) in care
+    assert (
+        "backup_sitter",
+        minute_window(12, 15, 16).start,
+        minute_window(12, 15, 16).end,
+        "family_home",
+    ) in care
+    assert not any(
+        item.assigned_person_id == "parent_a"
+        and item.window.start >= minute_window(12, 0, 16).start
+        for item in matrix.care_primitives
+    )
+    assert any(
+        item.person_id == "parent_a" and item.window == minute_window(12, 0, 16)
+        for item in matrix.hard_unavailable_care_windows
+    )
 
     plan = showcase_plan_a()
     assert PlanValidator().validate(plan, scenario).valid
@@ -164,12 +196,100 @@ def test_canonical_initial_facts_require_sitter_afternoon_instead_of_parent_a() 
     assert ValidationErrorCode.PARENT_CRITICAL_CONFLICT in issue_codes(parent_afternoon, scenario)
 
 
+def test_canonical_plan_a_is_composed_entirely_from_exact_feasible_primitives() -> None:
+    scenario = get_demo_scenario()
+    planner_input = build_planner_invocation_input(
+        operation=PlannerOperation.INITIAL_PLANNING,
+        brief=initial_showcase_brief(scenario),
+        scenario=scenario,
+    )
+    matrix = planner_input.feasible_assignment_matrix
+    assert matrix is not None
+    primitives = [*matrix.care_primitives, *matrix.transport_primitives]
+
+    for segment in showcase_plan_a().coverage_segments:
+        assert any(
+            primitive.assigned_person_id == segment.assigned_person_id
+            and primitive.source is segment.source
+            and primitive.segment_type == segment.segment_type.value
+            and primitive.window == segment.window
+            and primitive.location_id == segment.location_id
+            and getattr(primitive, "destination_location_id", None)
+            == segment.destination_location_id
+            and getattr(primitive, "transporter_id", None) == segment.transporter_id
+            for primitive in primitives
+        )
+    rendered = canonical_planner_input(planner_input)
+    assert '"care_primitives"' in rendered
+    assert '"transport_primitives"' in rendered
+    assert '"people"' not in rendered
+
+
+def test_caregiver_unavailable_repair_feedback_names_exact_feasible_care() -> None:
+    scenario = get_demo_scenario()
+    invalid = showcase_plan_a().model_copy(deep=True)
+    invalid.coverage_segments[-1] = invalid.coverage_segments[-1].model_copy(
+        update={"window": minute_window(12, 0, 16)}
+    )
+    issues = PlanValidator().validate(invalid, scenario).issues
+    repair = build_planner_invocation_input(
+        operation=PlannerOperation.PLAN_REPAIR,
+        brief=initial_showcase_brief(scenario),
+        scenario=scenario,
+        previous_candidate=invalid,
+        validator_feedback=issues,
+    )
+    feedback = next(
+        issue
+        for issue in repair.validator_feedback
+        if issue.code is ValidationErrorCode.CAREGIVER_UNAVAILABLE
+    )
+
+    assert feedback.subject_id == "backup_sitter"
+    assert feedback.segment_id == invalid.coverage_segments[-1].segment_id
+    assert any(
+        "assigned_person_id=backup_sitter" in alternative
+        and "start=2026-08-27T12:15:00-07:00" in alternative
+        and "end=2026-08-27T16:00:00-07:00" in alternative
+        for alternative in feedback.suggested_alternatives
+    )
+
+
+def test_location_transition_repair_feedback_names_exact_location_primitive() -> None:
+    scenario = get_demo_scenario()
+    invalid = showcase_plan_a().model_copy(deep=True)
+    invalid.coverage_segments[2] = invalid.coverage_segments[2].model_copy(
+        update={"location_id": "family_home", "location_label": "Family home"}
+    )
+    issues = PlanValidator().validate(invalid, scenario).issues
+    repair = build_planner_invocation_input(
+        operation=PlannerOperation.PLAN_REPAIR,
+        brief=initial_showcase_brief(scenario),
+        scenario=scenario,
+        previous_candidate=invalid,
+        validator_feedback=issues,
+    )
+    feedback = next(
+        issue
+        for issue in repair.validator_feedback
+        if issue.code is ValidationErrorCode.LOCATION_TRANSITION_INVALID
+        and issue.segment_id == invalid.coverage_segments[2].segment_id
+    )
+
+    assert "family_home" in feedback.message
+    assert "grandma_home" in feedback.message
+    assert any(
+        "assigned_person_id=grandma" in alternative and "location_id=grandma_home" in alternative
+        for alternative in feedback.suggested_alternatives
+    )
+
+
 def test_feasible_matrix_tracks_changed_generic_caregiver_and_route_facts() -> None:
     original = get_demo_scenario()
     changed_caregiver = original.caregivers[0].model_copy(
         update={
             "caregiver_id": "relative_x",
-            "availability": [minute_window(10, 30, 13, 45)],
+            "availability": [minute_window(9, 0, 12, 15)],
             "location_id": "relative_x_home",
             "travel_minutes_from_family_home": 23,
             "can_transport_child": True,
@@ -179,6 +299,12 @@ def test_feasible_matrix_tracks_changed_generic_caregiver_and_route_facts() -> N
         original,
         caregivers=(changed_caregiver, *original.caregivers[1:]),
         unavailable_caregiver_ids=("ordinary_provider_x",),
+        parent_transport_capabilities=(
+            original.parent_transport_capabilities[0].model_copy(
+                update={"availability": [minute_window(8, 30, 9)]}
+            ),
+            *original.parent_transport_capabilities[1:],
+        ),
     )
     matrix = build_planner_invocation_input(
         operation=PlannerOperation.INITIAL_PLANNING,
@@ -188,21 +314,21 @@ def test_feasible_matrix_tracks_changed_generic_caregiver_and_route_facts() -> N
 
     assert matrix is not None
     changed = next(item for item in matrix.people if item.person_id == "relative_x")
-    assert changed.permitted_care_windows == [minute_window(10, 30, 13, 45)]
+    assert changed.permitted_care_windows == [minute_window(9, 0, 12, 15)]
     assert changed.allowed_care_location_ids == ["relative_x_home"]
     assert any(
         primitive.transporter_id == "relative_x" for primitive in matrix.transport_primitives
     )
     assert {
         (
-            primitive.origin_location_id,
+            primitive.location_id,
             primitive.destination_location_id,
             primitive.required_duration_minutes,
         )
         for primitive in matrix.transport_primitives
         if "relative_x_home"
         in {
-            primitive.origin_location_id,
+            primitive.location_id,
             primitive.destination_location_id,
         }
     } == {
@@ -214,7 +340,7 @@ def test_feasible_matrix_tracks_changed_generic_caregiver_and_route_facts() -> N
 def test_feasible_matrix_normalizes_parent_transport_capability_and_availability() -> None:
     original = get_demo_scenario()
     changed_parent = original.parent_transport_capabilities[0].model_copy(
-        update={"availability": [minute_window(8, 15, 8, 45)]}
+        update={"availability": [minute_window(8, 30, 9)]}
     )
     scenario = replace(
         original,
@@ -234,7 +360,7 @@ def test_feasible_matrix_normalizes_parent_transport_capability_and_availability
         item for item in matrix.transport_primitives if item.transporter_id == "parent_a"
     ]
     assert parent_primitives
-    assert all(item.permitted_window == minute_window(8, 15, 8, 45) for item in parent_primitives)
+    assert all(item.window == minute_window(8, 45, 9) for item in parent_primitives)
 
     disabled = replace(
         scenario,
@@ -264,10 +390,10 @@ def test_transport_primitives_bind_capable_person_window_and_route() -> None:
         item
         for item in matrix.transport_primitives
         if item.transporter_id == "parent_a"
-        and item.origin_location_id == "family_home"
+        and item.location_id == "family_home"
         and item.destination_location_id == "grandma_home"
     )
-    assert outward.permitted_window == minute_window(8, 45, 9)
+    assert outward.window == minute_window(8, 45, 9)
     assert outward.required_duration_minutes == 15
     assert outward.capability == "ALLOWED"
 
