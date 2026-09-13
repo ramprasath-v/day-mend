@@ -103,7 +103,7 @@ describe('Consumer destinations', () => {
     const fixture = TestBed.createComponent(App); fixture.detectChanges();
     await TestBed.inject(Router).navigateByUrl('/today'); fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('app-plan-change .repair-interval')).not.toBeNull();
-    expect(fixture.nativeElement.textContent).toContain('Your day is recovered.');
+    expect(fixture.nativeElement.textContent).toContain('Today is covered again.');
     expect(fixture.nativeElement.querySelector('app-approval-card')).toBeNull();
   });
 });

@@ -19,6 +19,10 @@ export class LiveRecoveryComponent {
   readonly error = input<string | null>(null);
   readonly pendingNotificationMode = input<NotificationMode>('meaningful_changes');
   readonly journal = computed(() => [...this.events()].sort((a,b) => a.sequence - b.sequence));
+  readonly journalSummary = computed(() => {
+    const count = this.journal().length;
+    return count ? `${count} recorded ${count === 1 ? 'event' : 'events'}` : 'View recovery activity';
+  });
   readonly completedActions = computed(() => this.recovery()?.execution_actions.filter(a => a.status === 'SUCCEEDED').length ?? 0);
   readonly currentEvents = computed(() => {
     const events = this.journal();

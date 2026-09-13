@@ -104,7 +104,7 @@ describe('DayMend recovery experience', () => {
 
   it('loads a status-based normal-day experience with no chat input', () => {
     const fixture = create();
-    expect(text(fixture)).toContain('Your day is covered');
+    expect(text(fixture)).toContain('Your childcare is covered this week.');
     expect(text(fixture)).toContain('Nanny unavailable');
     expect(fixture.debugElement.query(By.css('input'))).toBeNull();
     expect(fixture.debugElement.query(By.css('textarea'))).toBeNull();
@@ -364,7 +364,7 @@ describe('DayMend recovery experience', () => {
     expect(request.request.body).toEqual({ decision: 'APPROVE', expected_version: 3 });
     request.flush(resolvedCase);
     fixture.detectChanges();
-    expect(text(fixture)).toContain('Your day is recovered.');
+    expect(text(fixture)).toContain('Today is covered again.');
     expect(text(fixture)).toContain('Recovery resolved');
     expect(fixture.nativeElement.querySelector('app-plan-change')).not.toBeNull();
     expect(text(fixture)).toContain('Completion verified within the demo scenario');
@@ -399,7 +399,7 @@ describe('DayMend recovery experience', () => {
     expect(fixture.nativeElement.querySelector('.effective-day').textContent).not.toContain(
       'Harbor Nanny Coop',
     );
-    expect(text(fixture)).not.toContain('Your day is recovered.');
+    expect(text(fixture)).not.toContain('Today is covered again.');
     expect(text(fixture)).not.toContain('Your day, repaired.');
     expect(text(fixture)).not.toContain('Simulated execution');
     expect(text(fixture)).not.toContain('Deterministic verifier');
@@ -435,7 +435,7 @@ describe('DayMend recovery experience', () => {
     expect(text(fixture)).not.toContain('Harbor Nanny Coop');
     expect(text(fixture)).not.toContain('Willow');
     expect(text(fixture)).not.toContain('Your day, repaired.');
-    expect(text(fixture)).not.toContain('Your day is recovered.');
+    expect(text(fixture)).not.toContain('Today is covered again.');
   });
 
   it('does not render success when a reject request receives an inconsistent resolved case', () => {
@@ -455,7 +455,7 @@ describe('DayMend recovery experience', () => {
     expect(text(fixture)).toContain('inconsistent approval result');
     expect(text(fixture)).toContain('One decision needs you.');
     expect(text(fixture)).toContain('Recovery needs attention');
-    expect(text(fixture)).not.toContain('Your day is recovered.');
+    expect(text(fixture)).not.toContain('Today is covered again.');
   });
 
   it('shows a safe error message without backend details', () => {
@@ -531,7 +531,7 @@ describe('DayMend recovery experience', () => {
     expect(request.request.method).toBe('GET');
     request.flush(resolvedCase);
     fixture.detectChanges();
-    expect(text(fixture)).toContain('Your day is recovered.');
+    expect(text(fixture)).toContain('Today is covered again.');
     expect(text(fixture)).toContain('Recovery resolved');
     expect(fixture.nativeElement.querySelector('app-plan-change')).not.toBeNull();
   });

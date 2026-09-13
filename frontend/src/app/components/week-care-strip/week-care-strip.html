@@ -1,0 +1,30 @@
+@if (days().length) {
+  <section class="week-care" aria-labelledby="week-care-title">
+    <header>
+      <p class="eyebrow">Your usual care rhythm</p>
+      <h2 id="week-care-title">This week</h2>
+    </header>
+    <div class="week-grid" role="list" aria-label="Weekly childcare schedule">
+      @for (day of days(); track day.key) {
+        <article
+          role="listitem"
+          class="week-day"
+          [class.care-date]="day.isCareDate"
+          [attr.data-week-day]="day.key"
+          [attr.data-week-state]="day.tone"
+          [attr.aria-current]="day.isCareDate ? 'date' : null"
+        >
+          <div class="day-label">
+            <span>{{ day.weekday }}</span>
+            <time [attr.datetime]="day.key">{{ day.date }}</time>
+          </div>
+          <div class="care-block">
+            <strong>{{ day.primary }}</strong>
+            <span>{{ day.secondary }}</span>
+            @if (day.status) { <small>{{ day.status }}</small> }
+          </div>
+        </article>
+      }
+    </div>
+  </section>
+}

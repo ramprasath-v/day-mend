@@ -1,7 +1,5 @@
 <app-recovery-hero [recovery]="store.currentCase()" [careDate]="store.demoCareDate()" [busy]="store.loading()" (resetDemo)="store.resetDemo()" />
-@if (store.currentCase() || store.loading() || store.error()) {
-  <app-live-recovery [events]="store.progressEvents()" [recovery]="store.currentCase()" [busy]="store.loading()" [connected]="store.progressConnected()" [elapsedSeconds]="store.elapsedSeconds()" [action]="store.actionInProgress()" [error]="store.error()" [pendingNotificationMode]="pendingNotificationMode()" />
-}
+<app-week-care-strip [careWindow]="careWindow()" [recovery]="store.currentCase()" [busy]="store.loading()" [action]="store.actionInProgress()" />
 @if (store.error(); as error) {
   <div class="error-banner" role="alert"><p>{{ error }}</p><button class="button button--secondary" (click)="store.refresh()" [disabled]="store.loading()">Try refresh</button></div>
 }
@@ -13,7 +11,7 @@
     <section class="no-option-day" aria-labelledby="no-option-title">
       <p class="eyebrow">Recovery needs another option</p>
       <h2 id="no-option-title">No recovery option is available with your current settings.</h2>
-      <p>Known caregivers cannot cover the remaining gap, and external backup care is turned off.</p>
+      <p>{{ noOptionSupportingText() }}</p>
       <div class="effective-day" aria-label="Covered and unresolved parts of the day">
         @for (entry of day.entries; track entry.start) {
           <article [class.covered]="entry.kind === 'covered'" [class.unresolved]="entry.kind === 'unresolved'" [attr.data-effective-state]="entry.kind">
@@ -88,8 +86,17 @@
     }
   </div>
   }
-} @else if (!store.loading()) {
+} @else if (store.loading()) {
+  <section class="normal-day recovering-day" aria-labelledby="recovering-day-title">
+    <p class="eyebrow">Today’s care</p>
+    <h2 id="recovering-day-title">The care window being repaired</h2>
+    <div class="normal-span"><time>8:00 AM–4:00 PM</time><strong>Nanny unavailable</strong><span>DayMend is finding a safe replacement.</span></div>
+  </section>
+} @else {
   <section class="normal-day"><p class="eyebrow">Demo day · scheduled care</p><h2>One continuous care window</h2>
     <div class="normal-span"><time>8:00 AM–4:00 PM</time><strong>Nanny</strong><span>Scheduled childcare</span></div>
   </section>
+}
+@if (store.currentCase() || store.loading() || store.error()) {
+  <app-live-recovery [events]="store.progressEvents()" [recovery]="store.currentCase()" [busy]="store.loading()" [connected]="store.progressConnected()" [elapsedSeconds]="store.elapsedSeconds()" [action]="store.actionInProgress()" [error]="store.error()" [pendingNotificationMode]="pendingNotificationMode()" />
 }

@@ -12,6 +12,7 @@ import { DemoControlsComponent } from '../components/demo-controls/demo-controls
 import { LiveRecoveryComponent } from '../components/live-recovery/live-recovery';
 import { PlanChangeComponent } from '../components/plan-change/plan-change';
 import { RecoveryHeroComponent } from '../components/recovery-hero/recovery-hero';
+import { WeekCareStripComponent } from '../components/week-care-strip/week-care-strip';
 
 interface RejectedDayEntry {
   kind: 'covered' | 'unresolved';
@@ -22,7 +23,7 @@ interface RejectedDayEntry {
 
 @Component({
   selector: 'app-today',
-  imports: [DatePipe, ApprovalCardComponent, CoveragePlanComponent, DemoControlsComponent, LiveRecoveryComponent, PlanChangeComponent, RecoveryHeroComponent, RepairZoneComponent],
+  imports: [DatePipe, ApprovalCardComponent, CoveragePlanComponent, DemoControlsComponent, LiveRecoveryComponent, PlanChangeComponent, RecoveryHeroComponent, RepairZoneComponent, WeekCareStripComponent],
   templateUrl: './today.html',
   styleUrl: './today.css',
 })
@@ -37,6 +38,12 @@ export class TodayPage {
       .reverse()
       .find((event) => event.details['outcome_code'] === 'NO_RECOVERY_OPTION') ?? null,
   );
+  readonly noOptionSupportingText = computed(() => {
+    const value = this.noOptionEvent()?.details['supporting_text'];
+    return typeof value === 'string'
+      ? value
+      : 'Known caregivers cannot cover the remaining gap with the current family settings.';
+  });
   readonly noOptionDay = computed(() => {
     const recovery = this.store.currentCase();
     const event = this.noOptionEvent();
@@ -117,11 +124,13 @@ export class TodayPage {
     return events.slice(accepted + 1).some(e => e.event_type === 'WORLD_STATE_CHANGED' || e.event_type === 'SEGMENTS_INVALIDATED');
   });
   readonly pendingNotificationMode = signal<NotificationMode>('decisions_only');
+  readonly careWindow = signal<CoverageWindow | null>(null);
   constructor() {
     // Presentation only: this request must never gate or fail the recovery mutation.
     inject(FamilyService).get().pipe(takeUntilDestroyed()).subscribe({
       next: family => {
         this.pendingNotificationMode.set(family.notification_mode);
+        this.careWindow.set(family.required_care_schedule);
         this.store.demoCareDate.set(family.required_care_schedule.start);
       },
       error: () => this.pendingNotificationMode.set('decisions_only'),

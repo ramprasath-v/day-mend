@@ -4,10 +4,11 @@
 .day-schedule { min-width: 0; }
 .resolved-changes { margin-top: 1rem; border-left: 3px solid #91ac94; padding-left: 1rem; }
 .resolved-changes > summary { color: var(--green); font-weight: 600; }
-.normal-day { max-width: 820px; padding: 1rem 0 3rem; }
+.normal-day { max-width: 820px; padding: 1rem 0 2rem; }
 .normal-span { border-left: 2px solid var(--green); padding: 1rem 2rem; display: grid; gap: .4rem; }
 .normal-span strong { font-size: 1.25rem; font-weight: 600; }
 .normal-span span, .verification { color: var(--muted); }
+.recovering-day .normal-span { border-color: #bb8747; background: #f7f0df; }
 .error-banner { border-left: 3px solid var(--red); padding: 0 1rem; }
 .rejected-day, .no-option-day { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 1.5rem 0; }
 .rejected-day h2, .no-option-day h2 { margin: .25rem 0 .6rem; }
