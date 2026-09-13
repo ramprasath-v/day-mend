@@ -4,7 +4,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FamilyService, NotificationMode } from '../core/family.service';
 import { DatePipe } from '@angular/common';
 import { RecoveryStore } from '../core/recovery.store';
-import { CoverageSegment } from '../core/recovery.models';
+import { CoverageSegment, CoverageWindow, RecoveryEvent } from '../core/recovery.models';
 import { friendlyPerson } from '../core/recovery-status';
 import { ApprovalCardComponent } from '../components/approval-card/approval-card';
 import { CoveragePlanComponent } from '../components/coverage-plan/coverage-plan';
@@ -32,6 +32,36 @@ export class TodayPage {
   readonly rejected = computed(
     () => this.store.currentCase()?.approval_history.at(-1)?.status === 'REJECTED',
   );
+  readonly noOptionEvent = computed(() =>
+    [...(this.store.currentCase()?.events ?? [])]
+      .reverse()
+      .find((event) => event.details['outcome_code'] === 'NO_RECOVERY_OPTION') ?? null,
+  );
+  readonly noOptionDay = computed(() => {
+    const recovery = this.store.currentCase();
+    const event = this.noOptionEvent();
+    const prior = recovery?.previous_plans.at(-1);
+    if (!event || !prior) return null;
+
+    const preservedIds = this.stringList(event, 'preserved_segment_ids');
+    const uncovered = this.coverageWindows(event);
+    const entries: RejectedDayEntry[] = [
+      ...prior.coverage_segments
+        .filter((segment) => preservedIds.includes(segment.segment_id))
+        .map((segment) => ({
+          kind: 'covered' as const,
+          start: segment.window.start,
+          end: segment.window.end,
+          segment,
+        })),
+      ...uncovered.map((window) => ({
+        kind: 'unresolved' as const,
+        start: window.start,
+        end: window.end,
+      })),
+    ].sort((left, right) => Date.parse(left.start) - Date.parse(right.start));
+    return { entries, unresolved: uncovered };
+  });
   readonly rejectedDay = computed(() => {
     const recovery = this.store.currentCase();
     const prior = recovery?.previous_plans.at(-1);
@@ -117,5 +147,24 @@ export class TodayPage {
       (segmentType(left) !== 'TRANSPORT' ||
         (destination(left) === destination(right) && transporter(left) === transporter(right)))
     );
+  }
+
+  private stringList(event: RecoveryEvent, key: string): string[] {
+    const value = event.details[key];
+    return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+  }
+
+  private coverageWindows(event: RecoveryEvent): CoverageWindow[] {
+    const value = event.details['uncovered_windows'];
+    if (!Array.isArray(value)) return [];
+    return value.filter((item): item is CoverageWindow => {
+      if (!item || typeof item !== 'object') return false;
+      const candidate = item as Record<string, unknown>;
+      return (
+        typeof candidate['start'] === 'string' &&
+        typeof candidate['end'] === 'string' &&
+        Date.parse(candidate['start']) < Date.parse(candidate['end'])
+      );
+    });
   }
 }

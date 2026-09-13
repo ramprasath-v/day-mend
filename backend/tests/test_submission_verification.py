@@ -29,6 +29,7 @@ class FixtureGateway:
 
     def __init__(self):
         self.results = []
+        self.replan_calls = 0
 
     def agents(self, scenario, replan=False):
         recorder = ToolInvocationRecorder(allowed_tool_names={"search_backup_care"})
@@ -110,6 +111,7 @@ class FixtureGateway:
         return result
 
     def replan(self, recovery_case, event, scenario):
+        self.replan_calls += 1
         result, _ = run_multi_agent_replanning(
             recovery_case=recovery_case,
             event=event,
@@ -232,12 +234,33 @@ def test_external_disabled_is_unresolved_without_research_or_provider_acceptance
     created = start(client)
     assert created.status_code == 201
     case = created.json()
+    results_before_decline = len(gateway.results)
     declined = decline(client, case)
-    assert declined.status_code == 409
-    result = gateway.results[-1]
-    assert not result.success
-    assert result.research_agent_invocation_count == 0
+    assert declined.status_code == 200
+    assert gateway.replan_calls == 0
+    assert len(gateway.results) == results_before_decline
+    outcome = declined.json()
+    decline_event = outcome["events"][-1]
+    assert decline_event["details"]["outcome_code"] == "NO_RECOVERY_OPTION"
+    assert decline_event["details"]["reason_code"] == "EXTERNAL_BACKUP_DISABLED"
+    assert decline_event["details"]["message"] == (
+        "No recovery option is available with your current settings."
+    )
+    assert decline_event["details"]["supporting_text"] == (
+        "Known caregivers cannot cover the remaining gap, and external backup care is turned off."
+    )
+    assert decline_event["details"]["uncovered_windows"] == [
+        {
+            "start": "2026-08-27T08:45:00-07:00",
+            "end": "2026-08-27T12:15:00-07:00",
+        }
+    ]
+    assert len(decline_event["details"]["preserved_segment_ids"]) == 2
+    assert outcome["status"] == "NO_RECOVERY_OPTION"
+    assert outcome["pending_approval"] is None
+    assert not outcome["execution_actions"]
     saved = client.get(f"/recoveries/{case['recovery_case_id']}").json()
+    assert saved == outcome
     assert saved["status"] != "RESOLVED"
     assert not saved["execution_actions"]
     assert not any(
@@ -250,9 +273,10 @@ def test_external_disabled_is_unresolved_without_research_or_provider_acceptance
         + json.dumps(
             {
                 "status_code": declined.status_code,
-                "error": declined.json(),
+                "outcome": decline_event["details"]["outcome_code"],
                 "persisted_status": saved["status"],
-                "research_calls": result.research_agent_invocation_count,
+                "research_calls": 0,
+                "planner_calls": gateway.replan_calls,
             }
         )
     )

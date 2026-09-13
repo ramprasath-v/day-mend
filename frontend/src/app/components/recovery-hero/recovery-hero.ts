@@ -35,6 +35,15 @@ export class RecoveryHeroComponent {
     const recovery = this.recovery();
     const base = recovery ? RECOVERY_STATUS_COPY[recovery.status] : INITIAL_STATUS;
     if (this.busy()) return { ...base, title: 'Adjusting your day.', description: 'The current request is in progress. Your recorded schedule stays here while DayMend works.' };
+    if (recovery?.events.some((event) => event.details['outcome_code'] === 'NO_RECOVERY_OPTION')) {
+      return {
+        ...base,
+        eyebrow: 'Recovery needs another option',
+        title: 'No recovery option is available with your current settings.',
+        description: 'Known caregivers cannot cover the remaining gap, and external backup care is turned off.',
+        tone: 'attention' as const,
+      };
+    }
     if (recovery?.approval_history.at(-1)?.status === 'REJECTED') {
       return {
         ...base,

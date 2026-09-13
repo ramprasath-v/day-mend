@@ -38,6 +38,13 @@ export const RECOVERY_STATUS_COPY: Record<RecoveryStatus, StatusPresentation> = 
     description: 'The affected coverage is being rebuilt while valid parts stay in place.',
     tone: 'working',
   },
+  NO_RECOVERY_OPTION: {
+    eyebrow: 'Recovery needs another option',
+    title: 'No recovery option is available with your current settings.',
+    description:
+      'Known caregivers cannot cover the remaining gap, and external backup care is turned off.',
+    tone: 'attention',
+  },
   APPROVAL_REQUIRED: {
     eyebrow: 'Waiting for your approval',
     title: 'A valid recovery plan is ready',

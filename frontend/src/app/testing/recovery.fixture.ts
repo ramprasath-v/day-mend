@@ -214,6 +214,59 @@ export const rejectedCase: RecoveryCase = {
   version: 4,
 };
 
+export const noOptionCase: RecoveryCase = {
+  ...planACase,
+  status: 'NO_RECOVERY_OPTION',
+  active_plan: {
+    ...planA,
+    validation_state: 'INVALID',
+    validation_errors: ['Recorded caregiver decline invalidated assigned care.'],
+  },
+  previous_plans: [planA],
+  plan_history: [
+    {
+      plan_id: planA.plan_id,
+      validation_state: 'VALID',
+      estimated_cost: planA.estimated_cost,
+      coverage_segment_count: planA.coverage_segments.length,
+    },
+  ],
+  events: [
+    ...planACase.events,
+    {
+      event_id: 'decline-no-option',
+      event_type: 'CAREGIVER_DECLINED',
+      occurred_at: '2026-08-27T09:05:00-07:00',
+      caregiver_id: 'grandma',
+      relevant_window: {
+        start: '2026-08-27T10:00:00-07:00',
+        end: '2026-08-27T13:00:00-07:00',
+      },
+      message: "Sorry, I can't help today.",
+      details: {
+        outcome_code: 'NO_RECOVERY_OPTION',
+        reason_code: 'EXTERNAL_BACKUP_DISABLED',
+        message: 'No recovery option is available with your current settings.',
+        supporting_text:
+          'Known caregivers cannot cover the remaining gap, and external backup care is turned off.',
+        uncovered_windows: [
+          {
+            start: '2026-08-27T10:00:00-07:00',
+            end: '2026-08-27T13:00:00-07:00',
+          },
+        ],
+        preserved_segment_ids: ['parent-am', 'employer-am', 'parent-pm', 'sitter-pm'],
+      },
+    },
+  ],
+  pending_approval: null,
+  approval_history: [],
+  execution_actions: [],
+  requires_approval: false,
+  latest_trigger: 'decline-no-option',
+  version: 2,
+};
+
 export const resolvedCase: RecoveryCase = {
   ...approvalCase,
   status: 'RESOLVED',

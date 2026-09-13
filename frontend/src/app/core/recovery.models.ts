@@ -5,6 +5,7 @@ export type RecoveryStatus =
   | 'EXECUTING'
   | 'WAITING_FOR_RESPONSE'
   | 'REPLANNING'
+  | 'NO_RECOVERY_OPTION'
   | 'APPROVAL_REQUIRED'
   | 'RESOLVED'
   | 'FAILED';
@@ -178,7 +179,7 @@ export interface RecoveryProgressEvent {
   details: {
     action_id?: string;
     action_type?: string;
-    affected_windows?: string[];
+    affected_windows?: CoverageWindow[] | string[];
     attempt_number?: number;
     candidate_count?: number;
     cost?: MoneyValue;

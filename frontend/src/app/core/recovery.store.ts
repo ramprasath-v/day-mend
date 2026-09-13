@@ -58,7 +58,7 @@ export class RecoveryStore {
   });
 
   startRecovery(): void {
-    const progressId = this.ensureProgress();
+    const progressId = this.replaceProgress();
     this.run('starting', () =>
       this.api.startRecovery({
         disruption_type: 'CHILDCARE_UNAVAILABLE',
@@ -126,8 +126,11 @@ export class RecoveryStore {
 
   resetDemo(): void {
     if (this.loading()) return;
+    const previousCaseId = this.currentCaseId();
     this.error.set(null);
     this.actionInProgress.set('resetting');
+    this.stopProgress();
+    this.progressId = null;
     this.family
       .resetDemo()
       .pipe(finalize(() => this.actionInProgress.set(null)))
@@ -140,8 +143,10 @@ export class RecoveryStore {
           this.progressId = null;
           globalThis.localStorage?.removeItem(this.storageKey);
         },
-        error: () =>
-          this.error.set('DayMend could not reset the demo family. Your saved recovery is unchanged.'),
+        error: () => {
+          if (previousCaseId) this.ensureProgress(previousCaseId);
+          this.error.set('DayMend could not reset the demo family. Your saved recovery is unchanged.');
+        },
       });
   }
 
@@ -178,21 +183,43 @@ export class RecoveryStore {
 
   private ensureProgress(recoveryCaseId?: string): string {
     if (this.progressId) return this.progressId;
-    this.progressId = recoveryCaseId ?? this.newProgressId();
+    const progressId = recoveryCaseId ?? this.newProgressId();
+    this.progressId = progressId;
     this.disconnectProgress = this.progress.connect(
-      this.progressId,
-      (event) => this.mergeProgress([event]),
-      (connected) => this.progressConnected.set(connected),
+      progressId,
+      (event) => {
+        if (this.acceptsProgress(progressId, event)) this.mergeProgress([event]);
+      },
+      (connected) => {
+        if (this.progressId === progressId) this.progressConnected.set(connected);
+      },
     );
-    return this.progressId;
+    return progressId;
+  }
+
+  private replaceProgress(): string {
+    this.stopProgress();
+    this.progressEvents.set([]);
+    this.progressId = null;
+    return this.ensureProgress();
   }
 
   private refreshProgressSnapshot(): void {
-    if (!this.progressId) return;
-    this.api.getProgress(this.progressId).subscribe({
-      next: (events) => this.mergeProgress(events),
+    const progressId = this.progressId;
+    if (!progressId) return;
+    this.api.getProgress(progressId).subscribe({
+      next: (events) => {
+        if (this.progressId !== progressId) return;
+        this.mergeProgress(events.filter((event) => this.acceptsProgress(progressId, event)));
+      },
       error: () => undefined,
     });
+  }
+
+  private acceptsProgress(progressId: string, event: RecoveryProgressEvent): boolean {
+    if (this.progressId !== progressId || event.progress_id !== progressId) return false;
+    const currentCaseId = this.currentCaseId();
+    return !event.recovery_case_id || !currentCaseId || event.recovery_case_id === currentCaseId;
   }
 
   private mergeProgress(incoming: RecoveryProgressEvent[]): void {

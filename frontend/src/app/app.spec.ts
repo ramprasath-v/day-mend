@@ -11,29 +11,44 @@ import {
 } from './core/recovery-progress.service';
 import { RecoveryProgressEvent } from './core/recovery.models';
 import { RECOVERY_STATUS_COPY } from './core/recovery-status';
-import { approvalCase, planACase, rejectedCase, resolvedCase } from './testing/recovery.fixture';
+import {
+  approvalCase,
+  noOptionCase,
+  planACase,
+  rejectedCase,
+  resolvedCase,
+} from './testing/recovery.fixture';
 import { familyFixture } from './testing/family.fixture';
 
 class FakeRecoveryProgressService {
   handler: ProgressEventHandler | null = null;
   connectionHandler: ((connected: boolean) => void) | null = null;
+  readonly connections: Array<{
+    progressId: string;
+    onEvent: ProgressEventHandler;
+    disconnected: boolean;
+  }> = [];
 
   connect(
     _progressId: string,
     onEvent: ProgressEventHandler,
     onConnectionChange?: (connected: boolean) => void,
   ): () => void {
+    const connection = { progressId: _progressId, onEvent, disconnected: false };
+    this.connections.push(connection);
     this.handler = onEvent;
     this.connectionHandler = onConnectionChange ?? null;
     onConnectionChange?.(true);
     return () => {
+      connection.disconnected = true;
       this.handler = null;
       this.connectionHandler = null;
     };
   }
 
   emit(event: RecoveryProgressEvent): void {
-    this.handler?.(event);
+    const progressId = this.connections.at(-1)?.progressId ?? event.progress_id;
+    this.handler?.({ ...event, progress_id: progressId });
   }
 
   setConnected(connected: boolean): void {
@@ -391,6 +406,38 @@ describe('DayMend recovery experience', () => {
     expect(text(fixture)).not.toContain('Plan C');
   });
 
+  it('shows a deterministic no-option outcome with preserved care and the actual gap', () => {
+    const fixture = create();
+    startAndFlush(fixture);
+    fixture.debugElement
+      .query(By.css('app-demo-controls .button--secondary'))
+      .nativeElement.click();
+    http
+      .expectOne(`${environment.apiBaseUrl}/recoveries/case-ui-demo/events`)
+      .flush(noOptionCase);
+    fixture.detectChanges();
+
+    const noOption = fixture.nativeElement.querySelector('.no-option-day') as HTMLElement;
+    expect(noOption.textContent).toContain(
+      'No recovery option is available with your current settings.',
+    );
+    expect(noOption.textContent).toContain(
+      'Known caregivers cannot cover the remaining gap, and external backup care is turned off.',
+    );
+    expect(noOption.textContent).toContain('10:00 AM–1:00 PM');
+    expect(noOption.querySelectorAll('[data-effective-state="covered"]').length).toBe(4);
+    expect(noOption.querySelectorAll('[data-effective-state="unresolved"]').length).toBe(1);
+    expect(noOption.textContent).toContain('Parent A');
+    expect(noOption.textContent).toContain('Backup sitter');
+    expect(fixture.nativeElement.querySelector('app-approval-card')).toBeNull();
+    expect(fixture.nativeElement.querySelector('app-plan-change')).toBeNull();
+    expect(fixture.nativeElement.querySelector('app-demo-controls')).toBeNull();
+    expect(text(fixture)).not.toContain('Harbor Nanny Coop');
+    expect(text(fixture)).not.toContain('Willow');
+    expect(text(fixture)).not.toContain('Your day, repaired.');
+    expect(text(fixture)).not.toContain('Your day is recovered.');
+  });
+
   it('does not render success when a reject request receives an inconsistent resolved case', () => {
     const fixture = create();
     startAndFlush(fixture);
@@ -505,6 +552,67 @@ describe('DayMend recovery experience', () => {
     fixture.detectChanges();
     expect(localStorage.getItem('daymend.recoveryCaseId')).toBeNull();
     expect(text(fixture)).toContain('Nanny unavailable');
+  });
+
+  it('closes and replaces progress streams and ignores events from the prior recovery', () => {
+    const fixture = create();
+    startAndFlush(fixture);
+    const progress = TestBed.inject(
+      RecoveryProgressService,
+    ) as unknown as FakeRecoveryProgressService;
+    const firstConnection = progress.connections[0];
+    const staleSnapshot = http.expectOne(
+      `${environment.apiBaseUrl}/progress/${firstConnection.progressId}`,
+    );
+
+    fixture.debugElement
+      .query(By.css('app-recovery-hero .button--secondary'))
+      .nativeElement.click();
+    http.expectOne(environment.apiBaseUrl + '/family/reset').flush(structuredClone(familyFixture));
+    fixture.detectChanges();
+    expect(firstConnection.disconnected).toBeTrue();
+
+    fixture.debugElement.query(By.css('app-demo-controls .button--primary')).nativeElement.click();
+    const secondConnection = progress.connections[1];
+    expect(secondConnection.progressId).not.toBe(firstConnection.progressId);
+    const post = http.expectOne(`${environment.apiBaseUrl}/recoveries`);
+    expect(post.request.method).toBe('POST');
+
+    firstConnection.onEvent({
+      id: `${firstConnection.progressId}:99`,
+      progress_id: firstConnection.progressId,
+      recovery_case_id: planACase.recovery_case_id,
+      sequence: 99,
+      timestamp: '2026-09-08T12:00:00Z',
+      event_type: 'RECOVERY_RESOLVED',
+      actor_type: 'SYSTEM',
+      actor_name: 'daymend',
+      stage: 'RECOVERY',
+      status: 'COMPLETED',
+      summary: 'Stale recovery resolved',
+      details: {},
+    });
+    staleSnapshot.flush([
+      {
+        id: `${firstConnection.progressId}:100`,
+        progress_id: firstConnection.progressId,
+        recovery_case_id: planACase.recovery_case_id,
+        sequence: 100,
+        timestamp: '2026-09-08T12:00:01Z',
+        event_type: 'RECOVERY_RESOLVED',
+        actor_type: 'SYSTEM',
+        actor_name: 'daymend',
+        stage: 'RECOVERY',
+        status: 'COMPLETED',
+        summary: 'Stale snapshot resolved',
+        details: {},
+      },
+    ]);
+    fixture.detectChanges();
+    expect(text(fixture)).not.toContain('Stale recovery resolved');
+    expect(text(fixture)).not.toContain('Stale snapshot resolved');
+
+    post.flush({ ...planACase, recovery_case_id: 'new-case' });
   });
 
   it('shows the current architecture only inside compact technical details', () => {

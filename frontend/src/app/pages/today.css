@@ -9,10 +9,10 @@
 .normal-span strong { font-size: 1.25rem; font-weight: 600; }
 .normal-span span, .verification { color: var(--muted); }
 .error-banner { border-left: 3px solid var(--red); padding: 0 1rem; }
-.rejected-day { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 1.5rem 0; }
-.rejected-day h2 { margin: .25rem 0 .6rem; }
-.rejected-day > p { max-width: 760px; }
-.rejected-day time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rejected-day, .no-option-day { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 1.5rem 0; }
+.rejected-day h2, .no-option-day h2 { margin: .25rem 0 .6rem; }
+.rejected-day > p, .no-option-day > p { max-width: 760px; }
+.rejected-day time, .no-option-day time { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .effective-day { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); border-top: 1px solid var(--line); margin-top: 1.25rem; }
 .effective-day article { min-width: 0; padding: 1rem 1.25rem; border-bottom: 1px solid var(--line); }
 .effective-day article + article { border-left: 1px solid var(--line); }

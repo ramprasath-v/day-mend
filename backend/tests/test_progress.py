@@ -78,6 +78,7 @@ def test_log_translation_exposes_only_reviewed_structured_details() -> None:
         "orchestrator_invocation_started",
         "planner_invocation_started",
         "backup_research_started",
+        "no_recovery_option",
         "validation_started",
         "approval_requested",
         "execution_started",

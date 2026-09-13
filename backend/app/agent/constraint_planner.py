@@ -735,6 +735,33 @@ def _build_feasible_assignment_matrix(
     )
 
 
+def build_feasible_assignment_matrix(
+    scenario: DemoScenario,
+    *,
+    affected_windows: list[CoverageWindow] | None = None,
+    preserved_segments: list[RecoveryPlanSegment] | None = None,
+) -> FeasibleAssignmentMatrix:
+    """Build the authoritative matrix without invoking a Planner."""
+
+    authoritative_context = _authoritative_context_for(scenario)
+    return _build_feasible_assignment_matrix(
+        authoritative_context,
+        affected_windows=affected_windows,
+        preserved_segments=preserved_segments,
+    )
+
+
+def _authoritative_context_for(scenario: DemoScenario) -> PlannerAuthoritativeContext:
+    context = planner_context_snapshot(scenario)
+    return PlannerAuthoritativeContext(
+        childcare_schedule=context["get_childcare_schedule"],
+        parent_calendars=context["get_parent_calendars"],
+        caregivers=context["get_caregivers"],
+        family_preferences=context["get_family_preferences"],
+        family_policy=context["get_family_policy"],
+    )
+
+
 def _care_primitive_summary(primitive: FeasibleCarePrimitive) -> str:
     return (
         f"CARE assigned_person_id={primitive.assigned_person_id} "
@@ -838,14 +865,7 @@ def build_planner_invocation_input(
 ) -> PlannerInvocationInput:
     """Build the shared local/AgentCore Planner contract from authoritative state."""
 
-    context = planner_context_snapshot(scenario)
-    authoritative_context = PlannerAuthoritativeContext(
-        childcare_schedule=context["get_childcare_schedule"],
-        parent_calendars=context["get_parent_calendars"],
-        caregivers=context["get_caregivers"],
-        family_preferences=context["get_family_preferences"],
-        family_policy=context["get_family_policy"],
-    )
+    authoritative_context = _authoritative_context_for(scenario)
     replanning = brief.planning_mode is PlanningMode.WORLD_STATE_REPLAN
     matrix = _build_feasible_assignment_matrix(
         authoritative_context,

@@ -361,6 +361,13 @@ def _presentations(event_type: str, fields: dict[str, Any]) -> list[dict[str, An
             ProgressStatus.WARNING,
             "Known options cannot cover the affected window",
         ),
+        "no_recovery_option": (
+            "NO_RECOVERY_OPTION",
+            ProgressActorType.DETERMINISTIC_SERVICE,
+            "deterministic_policy",
+            ProgressStatus.WARNING,
+            "No recovery option is available with your current settings.",
+        ),
         "backup_candidates_received": (
             "RESEARCH_RESULTS_READY",
             ProgressActorType.AGENT,

@@ -5,11 +5,32 @@
 @if (store.error(); as error) {
   <div class="error-banner" role="alert"><p>{{ error }}</p><button class="button button--secondary" (click)="store.refresh()" [disabled]="store.loading()">Try refresh</button></div>
 }
-@if (!store.loading()) {
+@if (!store.loading() && !noOptionEvent()) {
   <app-demo-controls [recovery]="store.currentCase()" [busy]="store.loading()" (start)="store.startRecovery()" (decline)="store.submitGrandmaDecline()" />
 }
 @if (store.currentCase(); as recovery) {
-  @if (rejected()) {
+  @if (noOptionDay(); as day) {
+    <section class="no-option-day" aria-labelledby="no-option-title">
+      <p class="eyebrow">Recovery needs another option</p>
+      <h2 id="no-option-title">No recovery option is available with your current settings.</h2>
+      <p>Known caregivers cannot cover the remaining gap, and external backup care is turned off.</p>
+      <div class="effective-day" aria-label="Covered and unresolved parts of the day">
+        @for (entry of day.entries; track entry.start) {
+          <article [class.covered]="entry.kind === 'covered'" [class.unresolved]="entry.kind === 'unresolved'" [attr.data-effective-state]="entry.kind">
+            <time>{{ entry.start | date:'h:mm a' }}–{{ entry.end | date:'h:mm a' }}</time>
+            @if (entry.segment; as segment) {
+              <strong>{{ friendlyPerson(segment.assigned_person_id) }}</strong>
+              <span>Covered · still valid</span>
+            } @else {
+              <strong>Coverage needed</strong>
+              <span>Unresolved with current settings</span>
+            }
+          </article>
+        }
+      </div>
+      <p class="no-actions">No backup provider was proposed and no recovery actions were taken.</p>
+    </section>
+  } @else if (rejected()) {
     <section class="rejected-day" aria-labelledby="rejected-title">
       <p class="eyebrow">Your decision is recorded</p>
       <h2 id="rejected-title">Recovery not approved</h2>
@@ -41,6 +62,7 @@
       <p class="no-actions">No booking or recovery actions were taken.</p>
     </section>
   }
+  @if (!noOptionEvent()) {
   <div class="day-layout" [class.has-decision]="!!recovery.pending_approval">
     <div class="day-schedule">
       @if (recovery.active_plan; as plan) {
@@ -65,6 +87,7 @@
       <app-approval-card [recovery]="recovery" [busy]="store.loading()" (approve)="store.decideApproval('APPROVE')" (reject)="store.decideApproval('REJECT')" />
     }
   </div>
+  }
 } @else if (!store.loading()) {
   <section class="normal-day"><p class="eyebrow">Demo day · scheduled care</p><h2>One continuous care window</h2>
     <div class="normal-span"><time>8:00 AM–4:00 PM</time><strong>Nanny</strong><span>Scheduled childcare</span></div>

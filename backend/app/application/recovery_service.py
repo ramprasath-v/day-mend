@@ -8,6 +8,7 @@ from typing import Protocol
 from uuid import uuid4
 
 from app.agent.config import AgentArchitecture, RecoveryAgentConfig
+from app.agent.constraint_planner import build_feasible_assignment_matrix
 from app.agent.multi_agent import (
     run_multi_agent_initial_planning,
     run_multi_agent_replanning,
@@ -39,6 +40,7 @@ from app.repositories.family_repository import InMemoryFamilyRepository
 from app.services import (
     ApprovalService,
     CompletionVerifier,
+    PlanInvalidationService,
     RecoveryExecutionService,
     WorkflowInvariantError,
     add_researched_caregiver,
@@ -300,6 +302,7 @@ class RecoveryApplicationService:
         self._approval = ApprovalService(repository)
         self._execution = RecoveryExecutionService(repository)
         self._completion = CompletionVerifier(repository)
+        self._invalidation = PlanInvalidationService()
 
     def start_recovery(self, command: StartRecoveryCommand) -> RecoveryCase:
         from app.agent.runtime_contracts import ScenarioContract
@@ -451,6 +454,13 @@ class RecoveryApplicationService:
             occurred_at=command.occurred_at,
             message=command.message,
         )
+        no_option = self._stop_when_external_backup_is_disabled(
+            recovery_case,
+            event,
+            scenario,
+        )
+        if no_option is not None:
+            return no_option
         try:
             result = self._planning.replan(recovery_case, event, scenario)
         except ValueError as exc:
@@ -549,6 +559,78 @@ class RecoveryApplicationService:
             )
             return gate.recovery_case
         return self._execute_and_complete(gate.recovery_case.case_id)
+
+    def _stop_when_external_backup_is_disabled(
+        self,
+        recovery_case: RecoveryCase,
+        event: RecoveryEvent,
+        scenario: DemoScenario,
+    ) -> RecoveryCase | None:
+        """Persist an unresolved deterministic outcome before impossible model work."""
+
+        if scenario.policy.allow_external_backup_providers:
+            return None
+        outcome = self._invalidation.apply_caregiver_decline(recovery_case, event, scenario)
+        matrix = build_feasible_assignment_matrix(
+            outcome.updated_scenario,
+            affected_windows=list(outcome.uncovered_windows),
+            preserved_segments=list(outcome.preserved_segments),
+        )
+        if matrix.care_primitives or matrix.transport_primitives:
+            return None
+
+        for _assumption in outcome.invalidated_assumptions:
+            log_event(
+                "assumption_invalidated",
+                recovery_case_id=recovery_case.case_id,
+                plan_id=recovery_case.active_recovery_plan.plan_id,
+                invalidated_count=1,
+            )
+        windows = [window.model_dump(mode="json") for window in outcome.uncovered_windows]
+        window_labels = [
+            f"{window.start.isoformat()}/{window.end.isoformat()}"
+            for window in outcome.uncovered_windows
+        ]
+        preserved_ids = [segment.segment_id for segment in outcome.preserved_segments]
+        log_event(
+            "known_options_exhausted",
+            recovery_case_id=recovery_case.case_id,
+            phase="replanning",
+            affected_windows=window_labels,
+            preserved_count=len(preserved_ids),
+        )
+        log_event(
+            "no_recovery_option",
+            recovery_case_id=recovery_case.case_id,
+            phase="replanning",
+            affected_windows=window_labels,
+            preserved_count=len(preserved_ids),
+        )
+
+        details = {
+            **outcome.recovery_case.events[-1].details,
+            "outcome_code": "NO_RECOVERY_OPTION",
+            "reason_code": "EXTERNAL_BACKUP_DISABLED",
+            "message": "No recovery option is available with your current settings.",
+            "supporting_text": (
+                "Known caregivers cannot cover the remaining gap, and external backup care "
+                "is turned off."
+            ),
+            "uncovered_windows": windows,
+            "preserved_segment_ids": preserved_ids,
+        }
+        recorded_event = outcome.recovery_case.events[-1].model_copy(update={"details": details})
+        unresolved = outcome.recovery_case.model_copy(
+            update={
+                "status": RecoveryStatus.NO_RECOVERY_OPTION,
+                "events": [*outcome.recovery_case.events[:-1], recorded_event],
+                "updated_at": self._now(outcome.recovery_case.updated_at),
+            }
+        )
+        return self.repository.save(
+            unresolved,
+            expected_version=recovery_case.version,
+        )
 
     def decide_approval(
         self,

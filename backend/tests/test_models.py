@@ -35,6 +35,7 @@ def test_recovery_status_contains_expected_states() -> None:
         "EXECUTING",
         "WAITING_FOR_RESPONSE",
         "REPLANNING",
+        "NO_RECOVERY_OPTION",
         "APPROVAL_REQUIRED",
         "RESOLVED",
         "FAILED",
