@@ -1,5 +1,8 @@
 :host { display: block; min-width: 0; }
 .change { transition: border-color .25s ease; }
+.change.not-applied .repair-interval { border-top-style: dashed; }
+.not-applied-note { color: var(--ink); }
+.not-applied-note strong { font-family: var(--sans); font-size: .95rem; }
 .repair-interval { background: #edf2ec; border-top: 3px solid #3b7974; border-radius: 3px 8px 8px 3px; padding: 1.2rem !important; margin: .5rem 0; }
 .now .annotation { color: #23605c; font-weight: 600; }
 .before [data-classification="Unavailable"] { background: #f4e6df; padding: .6rem; margin-bottom: .6rem; }

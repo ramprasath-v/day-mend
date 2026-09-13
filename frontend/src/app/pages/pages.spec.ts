@@ -5,7 +5,7 @@ import { App } from '../app';
 import { routes } from '../app.routes';
 import { RecoveryStore } from '../core/recovery.store';
 import { RecoveryCase } from '../core/recovery.models';
-import { approvalCase, resolvedCase } from '../testing/recovery.fixture';
+import { approvalCase, rejectedCase, resolvedCase } from '../testing/recovery.fixture';
 import { ApprovalCardComponent } from '../components/approval-card/approval-card';
 import { LiveRecoveryComponent } from '../components/live-recovery/live-recovery';
 import { FamilyService } from '../core/family.service';
@@ -49,6 +49,14 @@ describe('Consumer destinations', () => {
     state.currentCase.set(null); fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('No recovery is available');
     expect(fixture.nativeElement.querySelector('app-history article')).toBeNull();
+  });
+  it('labels a rejected proposal as not applied in History', async () => {
+    state.currentCase.set(rejectedCase);
+    const fixture = TestBed.createComponent(App); fixture.detectChanges();
+    await TestBed.inject(Router).navigateByUrl('/history'); fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Proposed alternative — not applied');
+    expect(fixture.nativeElement.textContent).toContain('No booking or recovery actions were taken');
+    expect(fixture.nativeElement.textContent).not.toContain('Recovered schedule');
   });
   it('shows saved family facts with editable care preferences', async () => {
     const fixture = TestBed.createComponent(App); fixture.detectChanges();

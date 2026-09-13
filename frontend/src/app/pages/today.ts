@@ -4,12 +4,21 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FamilyService, NotificationMode } from '../core/family.service';
 import { DatePipe } from '@angular/common';
 import { RecoveryStore } from '../core/recovery.store';
+import { CoverageSegment } from '../core/recovery.models';
+import { friendlyPerson } from '../core/recovery-status';
 import { ApprovalCardComponent } from '../components/approval-card/approval-card';
 import { CoveragePlanComponent } from '../components/coverage-plan/coverage-plan';
 import { DemoControlsComponent } from '../components/demo-controls/demo-controls';
 import { LiveRecoveryComponent } from '../components/live-recovery/live-recovery';
 import { PlanChangeComponent } from '../components/plan-change/plan-change';
 import { RecoveryHeroComponent } from '../components/recovery-hero/recovery-hero';
+
+interface RejectedDayEntry {
+  kind: 'covered' | 'unresolved';
+  start: string;
+  end: string;
+  segment?: CoverageSegment;
+}
 
 @Component({
   selector: 'app-today',
@@ -19,6 +28,59 @@ import { RecoveryHeroComponent } from '../components/recovery-hero/recovery-hero
 })
 export class TodayPage {
   readonly store = inject(RecoveryStore);
+  readonly friendlyPerson = friendlyPerson;
+  readonly rejected = computed(
+    () => this.store.currentCase()?.approval_history.at(-1)?.status === 'REJECTED',
+  );
+  readonly rejectedDay = computed(() => {
+    const recovery = this.store.currentCase();
+    const prior = recovery?.previous_plans.at(-1);
+    const proposed = recovery?.active_plan;
+    if (!this.rejected() || !prior || !proposed || prior.coverage_segments.length === 0) {
+      return null;
+    }
+
+    const preserved = prior.coverage_segments
+      .filter((segment) =>
+        proposed.coverage_segments.some((candidate) =>
+          this.segmentsMateriallyMatch(segment, candidate),
+        ),
+      )
+      .sort((left, right) => Date.parse(left.window.start) - Date.parse(right.window.start));
+    const coverageStart = prior.coverage_segments.reduce(
+      (earliest, segment) =>
+        Date.parse(segment.window.start) < Date.parse(earliest)
+          ? segment.window.start
+          : earliest,
+      prior.coverage_segments[0].window.start,
+    );
+    const coverageEnd = prior.coverage_segments.reduce(
+      (latest, segment) =>
+        Date.parse(segment.window.end) > Date.parse(latest) ? segment.window.end : latest,
+      prior.coverage_segments[0].window.end,
+    );
+    const entries: RejectedDayEntry[] = [];
+    let cursor = coverageStart;
+    for (const segment of preserved) {
+      if (Date.parse(segment.window.start) > Date.parse(cursor)) {
+        entries.push({ kind: 'unresolved', start: cursor, end: segment.window.start });
+      }
+      entries.push({
+        kind: 'covered',
+        start: segment.window.start,
+        end: segment.window.end,
+        segment,
+      });
+      if (Date.parse(segment.window.end) > Date.parse(cursor)) cursor = segment.window.end;
+    }
+    if (Date.parse(cursor) < Date.parse(coverageEnd)) {
+      entries.push({ kind: 'unresolved', start: cursor, end: coverageEnd });
+    }
+    return {
+      entries,
+      unresolved: entries.filter((entry) => entry.kind === 'unresolved'),
+    };
+  });
   readonly declineConfirmed = computed(() => {
     const events = this.store.progressEvents();
     const accepted = events.reduce((last, e, index) => e.event_type === 'PLAN_A_ACCEPTED' || e.event_type === 'PLAN_B_ACCEPTED' ? index : last, -1);
@@ -34,5 +96,26 @@ export class TodayPage {
       },
       error: () => this.pendingNotificationMode.set('decisions_only'),
     });
+  }
+
+  private segmentsMateriallyMatch(left: CoverageSegment, right: CoverageSegment): boolean {
+    const segmentType = (segment: CoverageSegment) => segment.segment_type ?? 'CARE';
+    const location = (segment: CoverageSegment) =>
+      segment.location_id ?? segment.location_label ?? null;
+    const destination = (segment: CoverageSegment) =>
+      segment.destination_location_id ?? segment.destination_location_label ?? null;
+    const transporter = (segment: CoverageSegment) =>
+      segment.transporter_id ?? segment.assigned_person_id;
+
+    return (
+      Date.parse(left.window.start) === Date.parse(right.window.start) &&
+      Date.parse(left.window.end) === Date.parse(right.window.end) &&
+      left.assigned_person_id === right.assigned_person_id &&
+      left.source === right.source &&
+      segmentType(left) === segmentType(right) &&
+      location(left) === location(right) &&
+      (segmentType(left) !== 'TRANSPORT' ||
+        (destination(left) === destination(right) && transporter(left) === transporter(right)))
+    );
   }
 }

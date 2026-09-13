@@ -9,8 +9,37 @@
   <app-demo-controls [recovery]="store.currentCase()" [busy]="store.loading()" (start)="store.startRecovery()" (decline)="store.submitGrandmaDecline()" />
 }
 @if (store.currentCase(); as recovery) {
-  @if (recovery.approval_history.at(-1)?.status === 'REJECTED') {
-    <section class="open-section"><h2>Recovery not approved</h2><p>No recovery actions were taken. This case remains open; no alternative has been confirmed.</p></section>
+  @if (rejected()) {
+    <section class="rejected-day" aria-labelledby="rejected-title">
+      <p class="eyebrow">Your decision is recorded</p>
+      <h2 id="rejected-title">Recovery not approved</h2>
+      @if (rejectedDay(); as day) {
+        <p>
+          No changes were made.
+          @for (window of day.unresolved; track window.start) {
+            Coverage is still needed from
+            <time>{{ window.start | date:'h:mm a' }}–{{ window.end | date:'h:mm a' }}</time>{{ $last ? '.' : ';' }}
+          }
+        </p>
+        <div class="effective-day" aria-label="Current effective day after rejection">
+          @for (entry of day.entries; track entry.start) {
+            <article [class.covered]="entry.kind === 'covered'" [class.unresolved]="entry.kind === 'unresolved'" [attr.data-effective-state]="entry.kind">
+              <time>{{ entry.start | date:'h:mm a' }}–{{ entry.end | date:'h:mm a' }}</time>
+              @if (entry.segment; as segment) {
+                <strong>{{ friendlyPerson(segment.assigned_person_id) }}</strong>
+                <span>Covered · still valid</span>
+              } @else {
+                <strong>Coverage needed</strong>
+                <span>Unresolved</span>
+              }
+            </article>
+          }
+        </div>
+      } @else {
+        <p>No changes were made. This case remains open; no alternative has been confirmed.</p>
+      }
+      <p class="no-actions">No booking or recovery actions were taken.</p>
+    </section>
   }
   <div class="day-layout" [class.has-decision]="!!recovery.pending_approval">
     <div class="day-schedule">

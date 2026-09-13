@@ -49,7 +49,7 @@ export class RecoveryStore {
       starting: 'Checking today’s schedule and trusted backup options…',
       declining: 'Adapting the plan to Grandma’s response…',
       approving: 'Confirming backup coverage and verifying the recovery…',
-      rejecting: 'Recording your decision and looking for another option…',
+      rejecting: 'Recording your decision…',
       refreshing: 'Refreshing the recovery state…',
       resetting: 'Resetting the demo family…',
     };

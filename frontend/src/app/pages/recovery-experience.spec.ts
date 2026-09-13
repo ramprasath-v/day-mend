@@ -9,7 +9,7 @@ import { RecoveryHeroComponent } from '../components/recovery-hero/recovery-hero
 import { RecoveryStore } from '../core/recovery.store';
 import { FamilyService } from '../core/family.service';
 import { RecoveryCase, RecoveryProgressEvent } from '../core/recovery.models';
-import { planACase, approvalCase, resolvedCase } from '../testing/recovery.fixture';
+import { planACase, approvalCase, rejectedCase, resolvedCase } from '../testing/recovery.fixture';
 import { familyFixture } from '../testing/family.fixture';
 
 const event = (type: string, sequence = 1, status: RecoveryProgressEvent['status'] = 'ACTIVE'): RecoveryProgressEvent => ({
@@ -102,6 +102,26 @@ describe('Repairing day experience', () => {
     expect(f.nativeElement.textContent).toContain('Approve $92.00');
     expect(f.nativeElement.textContent).toContain(approvalCase.pending_approval!.reason);
     expect(f.nativeElement.querySelector('app-plan-change')).not.toBeNull();
+    expect(f.nativeElement.querySelector('app-plan-change').textContent).toContain('Proposed repair');
+    expect(f.nativeElement.querySelector('app-plan-change').textContent).not.toContain('Your day, repaired.');
+  });
+  it('shows the effective unresolved day after rejection and keeps Plan B non-applied', () => {
+    state.currentCase.set(rejectedCase); state.loading.set(false); state.actionInProgress.set(null);
+    const f = TestBed.createComponent(TodayPage); f.detectChanges();
+    const effectiveDay = f.nativeElement.querySelector('.effective-day') as HTMLElement;
+    const proposal = f.nativeElement.querySelector('app-plan-change') as HTMLElement;
+    expect(f.nativeElement.textContent).toContain('Recovery not approved');
+    expect(f.nativeElement.textContent).toContain('No changes were made');
+    expect(effectiveDay.querySelectorAll('[data-effective-state="covered"]').length).toBe(3);
+    expect(effectiveDay.querySelectorAll('[data-effective-state="unresolved"]').length).toBe(1);
+    expect(effectiveDay.textContent).toContain('Coverage needed');
+    expect(effectiveDay.textContent).toContain('Parent A');
+    expect(effectiveDay.textContent).toContain('Backup sitter');
+    expect(proposal.querySelector('[data-plan-state]')?.getAttribute('data-plan-state')).toBe('rejected');
+    expect(proposal.textContent).toContain('Proposed alternative — not applied');
+    expect(proposal.textContent).toContain('No booking or recovery actions were taken');
+    expect(proposal.textContent).toContain('Employer backup care');
+    expect(proposal.textContent).not.toContain('Your day, repaired.');
   });
   it('settles resolved progress using actual action count and retains What changed', () => {
     state.currentCase.set(resolvedCase); state.loading.set(false); state.actionInProgress.set(null);
@@ -114,6 +134,7 @@ describe('Repairing day experience', () => {
     expect(f.nativeElement.textContent).toContain('Recovery run completed');
     expect(f.nativeElement.querySelector('.resolved-changes').open).toBeFalse();
     expect(f.nativeElement.querySelector('app-coverage-plan')).not.toBeNull();
+    expect(f.nativeElement.querySelector('app-plan-change').textContent).toContain('Your day, repaired.');
   });
   it('keeps History parent-facing, with decisions and technical details under native disclosure controls', () => {
     state.currentCase.set(resolvedCase);

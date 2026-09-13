@@ -376,11 +376,16 @@ describe('DayMend recovery experience', () => {
     });
     request.flush(rejectedCase);
     fixture.detectChanges();
-    expect(text(fixture)).toContain('DayMend is looking for another option');
     expect(text(fixture)).toContain('Recovery not approved');
-    expect(text(fixture)).toContain('No recovery actions were taken');
-    expect(text(fixture)).toContain('no alternative has been confirmed');
+    expect(text(fixture)).toContain('No changes were made');
+    expect(text(fixture)).toContain('Coverage is still needed');
+    expect(text(fixture)).toContain('Proposed alternative — not applied');
+    expect(text(fixture)).toContain('No booking or recovery actions were taken');
+    expect(fixture.nativeElement.querySelector('.effective-day').textContent).not.toContain(
+      'Harbor Nanny Coop',
+    );
     expect(text(fixture)).not.toContain('Your day is recovered.');
+    expect(text(fixture)).not.toContain('Your day, repaired.');
     expect(text(fixture)).not.toContain('Simulated execution');
     expect(text(fixture)).not.toContain('Deterministic verifier');
     expect(text(fixture)).not.toContain('Plan C');

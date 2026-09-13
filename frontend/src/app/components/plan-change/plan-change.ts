@@ -13,6 +13,31 @@ import { friendlyPerson } from '../../core/recovery-status';
 export class PlanChangeComponent {
   readonly recovery = input.required<RecoveryCase>();
   readonly priorPlan = computed(() => this.recovery().previous_plans.at(-1) ?? null);
+  readonly latestApproval = computed(() => this.recovery().approval_history.at(-1) ?? null);
+  readonly rejected = computed(() => this.latestApproval()?.status === 'REJECTED');
+  readonly applied = computed(() => {
+    const recovery = this.recovery();
+    return (
+      recovery.status === 'RESOLVED' ||
+      (this.latestApproval()?.status === 'APPROVED' &&
+        recovery.execution_actions.length > 0 &&
+        recovery.execution_actions.every((action) => action.status === 'SUCCEEDED'))
+    );
+  });
+  readonly heading = computed(() => {
+    if (this.rejected()) return 'Proposed alternative — not applied';
+    return this.applied() ? 'Your day, repaired.' : 'Proposed repair';
+  });
+  readonly description = computed(() => {
+    if (this.rejected()) {
+      return 'This proposal was declined and is shown only for context.';
+    }
+    if (this.applied()) {
+      return 'DayMend kept the coverage that still worked and adjusted the affected care and handoffs.';
+    }
+    return 'DayMend kept the coverage that still works. Nothing changes until you approve this proposal.';
+  });
+  readonly afterColumnLabel = computed(() => (this.applied() ? 'Now' : 'Proposed'));
   readonly affected = computed(() => this.partitionSegments().affected);
   readonly preserved = computed(() => this.partitionSegments().preserved);
   readonly replacement = computed(() => {

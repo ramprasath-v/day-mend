@@ -1,7 +1,8 @@
 @if (priorPlan() && recovery().active_plan) {
-<section class="change" aria-labelledby="change-title">
-  <header><p class="eyebrow">What changed · Plan A → Plan B</p><h2 id="change-title">Your day, repaired.</h2>
-    <p>DayMend kept the coverage that still worked and adjusted the affected care and handoffs.</p>
+<section class="change" [class.not-applied]="!applied()" aria-labelledby="change-title" [attr.data-plan-state]="rejected() ? 'rejected' : applied() ? 'applied' : 'proposed'">
+  <header><p class="eyebrow">{{ rejected() ? 'Proposal context' : 'What changed' }} · Plan A → Plan B</p><h2 id="change-title">{{ heading() }}</h2>
+    <p>{{ description() }}</p>
+    @if (rejected()) { <p class="not-applied-note"><strong>No booking or recovery actions were taken.</strong></p> }
     <p class="counts">Kept · {{ preserved().length }} <span>Invalidated · {{ affected().length }}</span> Replacement · {{ replacement().length }}</p>
   </header>
   <div class="day-spine">
@@ -25,8 +26,8 @@
               </article>
             } @empty { <p>No previous assignment in this interval.</p> }
           </section>
-          <section class="now" aria-label="Now">
-            <h3>Now</h3>
+          <section class="now" [attr.aria-label]="afterColumnLabel()">
+            <h3>{{ afterColumnLabel() }}</h3>
             @for (segment of group.after; track segment.segment_id) {
               <article class="changed-segment" [attr.data-classification]="afterLabel(segment)">
                 <span class="annotation">{{ afterLabel(segment) }}</span>

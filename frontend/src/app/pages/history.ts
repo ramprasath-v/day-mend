@@ -17,6 +17,9 @@ export class HistoryPage {
   readonly store = inject(RecoveryStore);
   readonly copy = RECOVERY_STATUS_COPY;
   readonly friendlyPerson = friendlyPerson;
+  readonly rejected = computed(
+    () => this.store.currentCase()?.approval_history.at(-1)?.status === 'REJECTED',
+  );
   readonly careDate = computed(() => {
     const segments = this.store.currentCase()?.active_plan?.coverage_segments ?? [];
     return [...segments].sort((a,b) => Date.parse(a.window.start) - Date.parse(b.window.start))[0]?.window.start;

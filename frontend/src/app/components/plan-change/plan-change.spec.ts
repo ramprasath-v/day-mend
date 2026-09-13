@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 
 import { CoverageSegment, RecoveryCase } from '../../core/recovery.models';
-import { approvalCase } from '../../testing/recovery.fixture';
+import { approvalCase, rejectedCase, resolvedCase } from '../../testing/recovery.fixture';
 import { PlanChangeComponent } from './plan-change';
 
 describe('PlanChangeComponent', () => {
@@ -116,6 +116,41 @@ describe('PlanChangeComponent', () => {
     expect(el.textContent).toContain('Replacement · 1');
     expect(el.querySelectorAll('[data-classification="Kept"]').length).toBe(2);
     expect(el.querySelectorAll('[data-classification="Unavailable"]').length).toBe(2);
+  });
+  it('labels an awaiting-approval plan as proposed rather than repaired', () => {
+    const el = render();
+    expect(el.textContent).toContain('Proposed repair');
+    expect(el.textContent).toContain('Nothing changes until you approve');
+    expect(el.textContent).not.toContain('Your day, repaired.');
+    expect(el.querySelector('[data-plan-state]')?.getAttribute('data-plan-state')).toBe('proposed');
+  });
+  it('labels a rejected proposal as not applied', () => {
+    const fixture = TestBed.createComponent(PlanChangeComponent);
+    fixture.componentRef.setInput('recovery', {
+      ...recovery,
+      status: rejectedCase.status,
+      pending_approval: null,
+      approval_history: rejectedCase.approval_history,
+      execution_actions: [],
+    });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Proposed alternative — not applied');
+    expect(fixture.nativeElement.textContent).toContain('No booking or recovery actions were taken');
+    expect(fixture.nativeElement.textContent).not.toContain('Your day, repaired.');
+    expect(fixture.nativeElement.querySelector('.now h3').textContent).toContain('Proposed');
+  });
+  it('uses repaired language only after approval and successful execution', () => {
+    const fixture = TestBed.createComponent(PlanChangeComponent);
+    fixture.componentRef.setInput('recovery', {
+      ...recovery,
+      status: resolvedCase.status,
+      pending_approval: null,
+      approval_history: resolvedCase.approval_history,
+      execution_actions: resolvedCase.execution_actions,
+    });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Your day, repaired.');
+    expect(fixture.nativeElement.querySelector('.now h3').textContent).toContain('Now');
   });
   it('renders replacement only once across its full interval', () => {
     const el = render();

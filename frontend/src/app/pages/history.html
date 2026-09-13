@@ -30,8 +30,8 @@
           <p><strong>{{ approval.status === 'APPROVED' ? 'You approved' : 'You declined' }} {{ approval.amount | currency: approval.currency ?? recovery.currency ?? 'USD':'symbol':'1.2-2' }}</strong></p><p>{{ approval.reason }}</p>
         } @empty { <p>{{ recovery.pending_approval ? 'Awaiting approval. Return to Today to decide.' : 'No decision recorded.' }}</p> }
       </section>
-      <section><h3>Final result</h3><p>{{ recovery.status === 'RESOLVED' ? 'Your day is recovered. Coverage and simulated execution results were verified.' : 'This recovery is not resolved yet.' }}</p>
-        @if (recovery.active_plan; as plan) { <app-coverage-plan [plan]="plan" [currency]="recovery.currency ?? 'USD'" [badge]="recovery.status === 'RESOLVED' ? 'Recovered schedule' : 'Last recorded schedule'" /> }
+      <section><h3>Final result</h3><p>{{ recovery.status === 'RESOLVED' ? 'Your day is recovered. Coverage and simulated execution results were verified.' : rejected() ? 'Recovery was not approved. No booking or recovery actions were taken.' : 'This recovery is not resolved yet.' }}</p>
+        @if (recovery.active_plan; as plan) { <app-coverage-plan [plan]="plan" [currency]="recovery.currency ?? 'USD'" [badge]="recovery.status === 'RESOLVED' ? 'Recovered schedule' : rejected() ? 'Proposed alternative — not applied' : 'Last recorded schedule'" /> }
       </section>
       <details class="technical"><summary>Technical activity</summary>
         <p>Recovery run started · {{ recovery.timestamps.created_at | date:'medium' }}</p>
