@@ -2,7 +2,7 @@
 
 > “When childcare falls through, your whole day shouldn’t.”
 
-**Demo video: Coming before submission** · **[Try live demo](https://d28bm0qb8qheeh.cloudfront.net/)**
+**[Demo video](https://youtu.be/ZYpdlBCWFq4)** · **[Try live demo](https://d28bm0qb8qheeh.cloudfront.net/)**
 
 When a backup caregiver declines, DayMend repairs only the affected coverage, preserves what still
 works, and asks the parent only when a real decision is needed.
@@ -75,7 +75,7 @@ FastAPI on App Runner
         ↓
 RecoveryApplicationService
         ↓
-Amazon Bedrock AgentCore Runtime (deployed v12)
+Amazon Bedrock AgentCore Runtime
         ↓
 Recovery Orchestrator Agent
         ├── Constraint Planner Agent
@@ -138,17 +138,17 @@ Backup Care Research runs conditionally when known care options cannot cover the
 
 ## Responsibility boundary
 
-| Agents may | Deterministic code must |
-| --- | --- |
-| Interpret the disruption | Normalize feasible assignments |
-| Produce the planning brief | Enforce complete continuous coverage |
-| Compose and repair plan candidates | Enforce caregiver trust and availability |
+| Agents may                             | Deterministic code must                             |
+| -------------------------------------- | --------------------------------------------------- |
+| Interpret the disruption               | Normalize feasible assignments                      |
+| Produce the planning brief             | Enforce complete continuous coverage                |
+| Compose and repair plan candidates     | Enforce caregiver trust and availability            |
 | Rank feasible synthetic backup options | Validate locations, travel, transport, and handoffs |
-| Recommend next actions | Calculate cost and apply hard family policy |
-| Explain the proposed recovery | Require and record approval |
-|  | Guard idempotent execution |
-|  | Verify completion before `RESOLVED` |
-|  | Persist and version the complete `RecoveryCase` |
+| Recommend next actions                 | Calculate cost and apply hard family policy         |
+| Explain the proposed recovery          | Require and record approval                         |
+|                                        | Guard idempotent execution                          |
+|                                        | Verify completion before `RESOLVED`                 |
+|                                        | Persist and version the complete `RecoveryCase`     |
 
 ## Live Recovery orchestration
 
@@ -162,26 +162,26 @@ returns. For SSE, event deduplication, and transport retry details, see
 These results describe one verified hosted lifecycle. The timings are individual observations,
 not averages, benchmarks, or reliability rates.
 
-| Evidence | Observed result |
-| --- | --- |
-| AgentCore runtime | v12 |
-| Plan A | Valid on first Planner attempt |
-| Plan A server latency | 32.031s |
-| Plan B | Valid on first Planner attempt |
-| Plan B server latency | 60.495s |
-| Deterministic cost | $94.50 |
-| Automatic-spend threshold | $30; human approval required |
-| Execution | 2 simulated actions succeeded |
-| Completion | Deterministically verified |
-| Final status | `RESOLVED` |
-| Persistence | Reload verified |
+| Evidence                  | Observed result                |
+| ------------------------- | ------------------------------ |
+| AgentCore runtime         | Amazon Bedrock AgentCore       |
+| Plan A                    | Valid on first Planner attempt |
+| Plan A server latency     | 32.031s                        |
+| Plan B                    | Valid on first Planner attempt |
+| Plan B server latency     | 60.495s                        |
+| Deterministic cost        | $94.50                         |
+| Automatic-spend threshold | $30; human approval required   |
+| Execution                 | 2 simulated actions succeeded  |
+| Completion                | Deterministically verified     |
+| Final status              | `RESOLVED`                     |
+| Persistence               | Reload verified                |
 
 Deployment details:
 
 - Frontend: <https://d28bm0qb8qheeh.cloudfront.net/>
 - Backend health: <https://5zvgskmgiu.us-east-1.awsapprunner.com/health>
 - Region: `us-east-1`
-- Reasoning runtime: Amazon Bedrock AgentCore, deployed v12
+- Reasoning runtime: Amazon Bedrock AgentCore
 - Architecture: `multi_research`
 - Model: `us.anthropic.claude-sonnet-4-5-20250929-v1:0`
 - Persistence: DynamoDB table `daymend-demo-recovery-cases`
@@ -299,7 +299,6 @@ npm run build
 - [Architecture and safety boundaries](docs/architecture.md)
 - [Proven demo flow](docs/demo-flow.md)
 - [AWS deployment](docs/deployment.md)
-- [Milestone summary](docs/milestones.md)
 
 ## License
 
